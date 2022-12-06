@@ -717,6 +717,7 @@ void ZCLFrame::applySynonymAttributes(Z_attribute_list& attr_list) {
     Z_attribute_synonym syn = Z_plugin_matchAttributeSynonym(device.modelId, device.manufacturerId,
                                                               attr.cluster, attr.attr_id);
     if (syn.found()) {
+      AddLog(LOG_LEVEL_DEBUG, PSTR("ZIG: apply synonym %04X/%04X with %04X/%04X (mul:%i div:%i)"), attr.cluster, attr.attr_id, syn.new_cluster, syn.new_attribute, syn.multiplier, syn.divider);
       if (syn.new_attribute == 0xFFFF) {    // if attr is 0xFFFF, remove attribute
         attr_list.removeAttribute(&attr);
       } else {
@@ -759,17 +760,6 @@ void ZCLFrame::computeSyntheticAttributes(Z_attribute_list& attr_list) {
         if (attr_list.countAttribute(0x0001,0x0021) == 0) {   // if it does not already contain BatteryPercentage
           uint32_t mv = attr.getUInt()*100;
           attr_list.addAttribute(0x0001, 0x0021).setUInt(toPercentageCR2032(mv) * 2);
-        }
-        break;
-      case 0x00010021:       // BatteryPercentage
-        if (modelId.startsWith(F("TRADFRI")) ||
-            modelId.startsWith(F("SYMFONISK"))) {
-          attr.setUInt(attr.getUInt() * 2);   // bug in IKEA remotes battery, need to double the value
-        }
-        break;
-      case 0x00060000:    // "Power" for lumi Door/Window is converted to "Contact"
-        if (modelId.startsWith(F("lumi.sensor_magnet"))) {
-          attr.setKeyId(0x0500, 0xFFF0 + ZA_Contact);    // change cluster and attribute to 0500/FFF0
         }
         break;
       case 0x02010008:    // Pi Heating Demand - solve Eutotronic bug
@@ -1010,8 +1000,8 @@ void ZCLFrame::parseReadConfigAttributes(uint16_t shortaddr, Z_attribute_list& a
     }
 
     // find the multiplier
-    int8_t multiplier = 1;
-    int8_t divider = 1;
+    uint16_t multiplier = 1;
+    uint16_t divider = 1;
     int16_t base = 0;
     Z_attribute_match matched_attr = Z_findAttributeMatcherById(shortaddr, cluster, attrid, false);
     if (matched_attr.found()) {

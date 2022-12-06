@@ -412,7 +412,8 @@ void CommandHandler(char* topicBuf, char* dataBuf, uint32_t data_len)
 
   bool binary_data = (index > 199);        // Suppose binary data on topic index > 199
   if (!binary_data) {
-    if (strstr_P(type, PSTR("SERIALSEND")) == nullptr) {  // Do not skip leading spaces on (s)serialsend
+    bool keep_spaces = ((strstr_P(type, PSTR("SERIALSEND")) != nullptr) && (index > 9));  // Do not skip leading spaces on (s)serialsend10 and up
+    if (!keep_spaces) {
       while (*dataBuf && isspace(*dataBuf)) {
         dataBuf++;                           // Skip leading spaces in data
         data_len--;
@@ -801,14 +802,25 @@ void CmndStatus(void)
   }
 
   if ((0 == payload) || (5 == payload)) {
+#if LWIP_IPV6
+    if (5 == payload) { WifiDumpAddressesIPv6(); }
+#endif // LWIP_IPV6
     Response_P(PSTR("{\"" D_CMND_STATUS D_STATUS5_NETWORK "\":{\"" D_CMND_HOSTNAME "\":\"%s\",\""
                           D_CMND_IPADDRESS "\":\"%_I\",\"" D_JSON_GATEWAY "\":\"%_I\",\"" D_JSON_SUBNETMASK "\":\"%_I\",\""
                           D_JSON_DNSSERVER "1\":\"%_I\",\"" D_JSON_DNSSERVER "2\":\"%_I\",\""
-                          D_JSON_MAC "\":\"%s\""),
+                          D_JSON_MAC "\":\"%s\""
+#if LWIP_IPV6
+                          ",\"" D_JSON_IP6_GLOBAL "\":\"%s\",\"" D_JSON_IP6_LOCAL "\":\"%s\""
+#endif // LWIP_IPV6
+                          ),
                           TasmotaGlobal.hostname,
                           (uint32_t)WiFi.localIP(), Settings->ipv4_address[1], Settings->ipv4_address[2],
                           Settings->ipv4_address[3], Settings->ipv4_address[4],
-                          WiFi.macAddress().c_str());
+                          WiFi.macAddress().c_str()
+#if LWIP_IPV6
+                          ,WifiGetIPv6().c_str(), WifiGetIPv6LinkLocal().c_str()
+#endif // LWIP_IPV6
+                          );
 #ifdef USE_TASMESH
     ResponseAppend_P(PSTR(",\"SoftAPMac\":\"%s\""), WiFi.softAPmacAddress().c_str());
 #endif  // USE_TASMESH
@@ -1871,8 +1883,8 @@ void CmndSerialBuffer(void) {
 #endif
 }
 
-void CmndSerialSend(void)
-{
+void CmndSerialSend(void) {
+  if (XdrvMailbox.index > 9) { XdrvMailbox.index -= 10; }
   if ((XdrvMailbox.index > 0) && (XdrvMailbox.index <= 6)) {
     SetSeriallog(LOG_LEVEL_NONE);
     Settings->flag.mqtt_serial = 1;                                  // CMND_SERIALSEND and CMND_SERIALLOG

@@ -2191,10 +2191,10 @@ void LightSetOutputs(const uint16_t *cur_col_10) {
         }
         if (!Settings->flag4.zerocross_dimmer) {
 #ifdef ESP32
-          TasmotaGlobal.pwm_value[i] = cur_col;   // mark the new expected value
+          TasmotaGlobal.pwm_value[i] = ac_zero_cross_power(cur_col);   // mark the new expected value
           // AddLog(LOG_LEVEL_DEBUG_MORE, "analogWrite-%i 0x%03X", i, cur_col);
 #else // ESP32
-          analogWrite(Pin(GPIO_PWM1, i), bitRead(TasmotaGlobal.pwm_inverted, i) ? Settings->pwm_range - cur_col : cur_col);
+          analogWrite(Pin(GPIO_PWM1, i), bitRead(TasmotaGlobal.pwm_inverted, i) ? Settings->pwm_range - ac_zero_cross_power(cur_col) : ac_zero_cross_power(cur_col));
           // AddLog(LOG_LEVEL_DEBUG_MORE, "analogWrite-%i 0x%03X", bitRead(TasmotaGlobal.pwm_inverted, i) ? Settings->pwm_range - cur_col : cur_col);
 #endif // ESP32
         }
@@ -3463,14 +3463,10 @@ bool Xdrv04(uint32_t function)
       ArtNetJSONAppend();
       break;
     case FUNC_NETWORK_UP:
-      if (Settings->flag6.artnet_autorun) {
-        if (!ArtNetStart()) {
-          Settings->flag6.artnet_autorun = false;   // disable autorun if it failed, avoid nasty loop errors
-        }
-      }
+      ArtNetFuncNetworkUp();
       break;
     case FUNC_NETWORK_DOWN:
-      ArtNetStop();
+      ArtNetFuncNetworkDown();
       break;
 #endif // USE_LIGHT_ARTNET
     }

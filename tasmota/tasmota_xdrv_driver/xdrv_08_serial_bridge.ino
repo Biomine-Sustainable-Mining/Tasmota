@@ -27,20 +27,23 @@
 
 #define USE_SERIAL_BRIDGE_TEE
 
-#ifdef ESP8266
-const uint16_t SERIAL_BRIDGE_BUFFER_SIZE = MIN_INPUT_BUFFER_SIZE;
+#ifdef SERIAL_BRIDGE_BUFFER_SIZE
+const uint16_t SERIAL_BRIDGE_BUFSIZE = SERIAL_BRIDGE_BUFFER_SIZE;
 #else
-const uint16_t SERIAL_BRIDGE_BUFFER_SIZE = INPUT_BUFFER_SIZE;
-#endif
+#ifdef ESP8266
+const uint16_t SERIAL_BRIDGE_BUFSIZE = MIN_INPUT_BUFFER_SIZE;     // 256
+#else
+const uint16_t SERIAL_BRIDGE_BUFSIZE = INPUT_BUFFER_SIZE;         // 800
+#endif  // ESP32
+#endif  // SERIAL_BRIDGE_BUFFER_SIZE
 
 const char kSerialBridgeCommands[] PROGMEM = "|"  // No prefix
-  D_CMND_SSERIALSEND "|" D_CMND_SBAUDRATE "|" D_CMND_SSERIALCONFIG;
+  D_CMND_SSERIALSEND "|" D_CMND_SBAUDRATE "|" D_CMND_SSERIALBUFFER "|" D_CMND_SSERIALCONFIG;
 
 void (* const SerialBridgeCommand[])(void) PROGMEM = {
-  &CmndSSerialSend, &CmndSBaudrate, &CmndSSerialConfig };
+  &CmndSSerialSend, &CmndSBaudrate, &CmndSSerialBuffer, &CmndSSerialConfig };
 
 #include <TasmotaSerial.h>
-
 TasmotaSerial *SerialBridgeSerial = nullptr;
 
 unsigned long serial_bridge_polling_window = 0;
@@ -92,7 +95,7 @@ void SerialBridgeInput(void) {
       static bool serial_bridge_overrun = false;
 
       if (isprint(serial_in_byte)) {                                             // Any char between 32 and 127
-        if (serial_bridge_in_byte_counter < SERIAL_BRIDGE_BUFFER_SIZE -1) {      // Add char to string if it still fits
+        if (serial_bridge_in_byte_counter < SERIAL_BRIDGE_BUFSIZE -1) {          // Add char to string if it still fits
           serial_bridge_buffer[serial_bridge_in_byte_counter++] = serial_in_byte;
         } else {
           serial_bridge_overrun = true;                                          // Signal overrun but continue reading input to flush until '\n' (EOL)
@@ -126,12 +129,12 @@ void SerialBridgeInput(void) {
           ((Settings->serial_delimiter == 128) && !isprint(serial_in_byte))) &&  // Any char not between 32 and 127
           !serial_bridge_raw;                                                    // In raw mode (CMND_SERIALSEND3) there is never a delimiter
 
-        if ((serial_bridge_in_byte_counter < SERIAL_BRIDGE_BUFFER_SIZE -1) &&    // Add char to string if it still fits and ...
+        if ((serial_bridge_in_byte_counter < SERIAL_BRIDGE_BUFSIZE -1) &&        // Add char to string if it still fits and ...
             !in_byte_is_delimiter) {                                             // Char is not a delimiter
           serial_bridge_buffer[serial_bridge_in_byte_counter++] = serial_in_byte;
         }
 
-        if ((serial_bridge_in_byte_counter >= SERIAL_BRIDGE_BUFFER_SIZE -1) ||   // Send message when buffer is full or ...
+        if ((serial_bridge_in_byte_counter >= SERIAL_BRIDGE_BUFSIZE -1) ||       // Send message when buffer is full or ...
             in_byte_is_delimiter) {                                              // Char is delimiter
           serial_bridge_polling_window = 0;                                      // Publish now
           break;
@@ -153,25 +156,31 @@ void SerialBridgeInput(void) {
     serial_bridge_buffer[serial_bridge_in_byte_counter] = 0;                   // Serial data completed
     bool assume_json = (!serial_bridge_raw && (serial_bridge_buffer[0] == '{'));
 
-    Response_P(PSTR("{\"" D_JSON_SSERIALRECEIVED "\":"));
-    if (assume_json) {
-      ResponseAppend_P(serial_bridge_buffer);
-    } else {
-      ResponseAppend_P(PSTR("\""));
-      if (serial_bridge_raw) {
-        ResponseAppend_P(PSTR("%*_H"), serial_bridge_in_byte_counter, serial_bridge_buffer);
-      } else {
-        ResponseAppend_P(EscapeJSONString(serial_bridge_buffer).c_str());
-      }
-      ResponseAppend_P(PSTR("\""));
-    }
-    ResponseJsonEnd();
+    TasmotaGlobal.serial_skip++;                       // SetOption35  Skip number of serial messages received (default 0)
+    if (TasmotaGlobal.serial_skip > Settings->param[P_SERIAL_SKIP]) {  // Handle intermediate changes to SetOption35
+      TasmotaGlobal.serial_skip = 0;
 
-    if (Settings->flag6.mqtt_disable_sserialrec ) {  // SetOption147  If it is activated, Tasmota will not publish SSerialReceived MQTT messages, but it will proccess event trigger rules
-       XdrvRulesProcess(0);
-    } else {
-      MqttPublishPrefixTopicRulesProcess_P(RESULT_OR_TELE, PSTR(D_JSON_SSERIALRECEIVED));
+      Response_P(PSTR("{\"" D_JSON_SSERIALRECEIVED "\":"));
+      if (assume_json) {
+        ResponseAppend_P(serial_bridge_buffer);
+      } else {
+        ResponseAppend_P(PSTR("\""));
+        if (serial_bridge_raw) {
+          ResponseAppend_P(PSTR("%*_H"), serial_bridge_in_byte_counter, serial_bridge_buffer);
+        } else {
+          ResponseAppend_P(EscapeJSONString(serial_bridge_buffer).c_str());
+        }
+        ResponseAppend_P(PSTR("\""));
+      }
+      ResponseJsonEnd();
+
+      if (Settings->flag6.mqtt_disable_sserialrec ) {  // SetOption147  If it is activated, Tasmota will not publish SSerialReceived MQTT messages, but it will proccess event trigger rules
+        XdrvRulesProcess(0);
+      } else {
+        MqttPublishPrefixTopicRulesProcess_P(RESULT_OR_TELE, PSTR(D_JSON_SSERIALRECEIVED));
+      }
     }
+
     serial_bridge_in_byte_counter = 0;
   }
 }
@@ -180,13 +189,14 @@ void SerialBridgeInput(void) {
 
 void SerialBridgeInit(void) {
   if (PinUsed(GPIO_SBR_RX) && PinUsed(GPIO_SBR_TX)) {
-    SerialBridgeSerial = new TasmotaSerial(Pin(GPIO_SBR_RX), Pin(GPIO_SBR_TX), HARDWARE_FALLBACK);
+//    SerialBridgeSerial = new TasmotaSerial(Pin(GPIO_SBR_RX), Pin(GPIO_SBR_TX), HARDWARE_FALLBACK);  // Default TM_SERIAL_BUFFER_SIZE (=64) size
+    SerialBridgeSerial = new TasmotaSerial(Pin(GPIO_SBR_RX), Pin(GPIO_SBR_TX), HARDWARE_FALLBACK, 0, MIN_INPUT_BUFFER_SIZE);  // 256
     if (SetSSerialBegin()) {
       if (SerialBridgeSerial->hardwareSerial()) {
         ClaimSerial();
         serial_bridge_buffer = TasmotaGlobal.serial_in_buffer;  // Use idle serial buffer to save RAM
       } else {
-        serial_bridge_buffer = (char*)(malloc(SERIAL_BRIDGE_BUFFER_SIZE));
+        serial_bridge_buffer = (char*)(malloc(SERIAL_BRIDGE_BUFSIZE));
       }
       SerialBridgeSerial->flush();
       SerialBridgePrintf("\r\n");
@@ -202,6 +212,7 @@ void SerialBridgeInit(void) {
 \*********************************************************************************************/
 
 void CmndSSerialSend(void) {
+  if (XdrvMailbox.index > 9) { XdrvMailbox.index -= 10; }
   if ((XdrvMailbox.index > 0) && (XdrvMailbox.index <= 6)) {
     serial_bridge_raw = (XdrvMailbox.index > 3);
     Settings->sbflag1.serbridge_console = 0;                                // Disable console Tee
@@ -261,6 +272,28 @@ void CmndSBaudrate(void) {
     SetSSerialBegin();
   }
   ResponseCmndNumber(Settings->sbaudrate * 300);
+}
+
+void CmndSSerialBuffer(void) {
+  // Allow non-pesistent serial receive buffer size change
+  if (SerialBridgeSerial->hardwareSerial()) {
+    // between MIN_INPUT_BUFFER_SIZE and MAX_INPUT_BUFFER_SIZE characters
+    CmndSerialBuffer();
+  } else {
+    // ESP8266 (software serial): between MIN_INPUT_BUFFER_SIZE and SERIAL_BRIDGE_BUFSIZE characters
+    // ESP32 (hardware serial only): between MIN_INPUT_BUFFER_SIZE and MAX_INPUT_BUFFER_SIZE characters
+    if (XdrvMailbox.data_len > 0) {
+      size_t size = XdrvMailbox.payload;
+      if (XdrvMailbox.payload < MIN_INPUT_BUFFER_SIZE) {
+        size = MIN_INPUT_BUFFER_SIZE;          // 256 / 256
+      }
+      else if (XdrvMailbox.payload > SERIAL_BRIDGE_BUFSIZE) {
+        size = SERIAL_BRIDGE_BUFSIZE;      // 256 / 800
+      }
+      SerialBridgeSerial->setRxBufferSize(size);
+    }
+    ResponseCmndNumber(SerialBridgeSerial->getRxBufferSize());
+  }
 }
 
 void CmndSSerialConfig(void) {

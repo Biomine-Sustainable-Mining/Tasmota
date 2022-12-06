@@ -118,6 +118,8 @@ struct WIFI {
   bool wifi_test_AP_TIMEOUT = false;
   bool wifi_Test_Restart = false;
   bool wifi_Test_Save_SSID2 = false;
+  // IPv6 support, not guarded with #if LWIP_IPV6 to avoid bloating code with ifdefs
+  bool ipv6_local_link_called = false;           // did we already enable IPv6 Local-Link address, needs to be redone at each reconnect
 } Wifi;
 
 typedef struct {
@@ -323,6 +325,7 @@ struct TasmotaGlobal_t {
   uint8_t light_driver;                     // Light module configured
   uint8_t light_type;                       // Light types
   uint8_t serial_in_byte;                   // Received byte
+  uint8_t serial_skip;                      // Skip number of received messages
   uint8_t devices_present;                  // Max number of devices supported
   uint8_t masterlog_level;                  // Master log level used to override set log level
   uint8_t seriallog_level;                  // Current copy of Settings->seriallog_level
@@ -682,7 +685,7 @@ void SleepDelay(uint32_t mseconds) {
   if (!TasmotaGlobal.backlog_nodelay && mseconds) {
     uint32_t wait = millis() + mseconds;
     while (!TimeReached(wait) && !Serial.available()) {  // We need to service serial buffer ASAP as otherwise we get uart buffer overrun
-      XdrvCall(FUNC_SLEEP_LOOP);  // Main purpose is reacting ASAP on serial data availability or interrupt handling (ADE7880)
+      XdrvXsnsCall(FUNC_SLEEP_LOOP);  // Main purpose is reacting ASAP on serial data availability or interrupt handling (ADE7880)
       delay(1);
     }
   } else {
