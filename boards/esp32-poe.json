@@ -11,7 +11,7 @@
       "hwids": [["0x1A86", "0x7523"]],
       "mcu": "esp32",
       "variant": "esp32-poe",
-      "partitions": "partitions/esp32_partition_app2880k_fs320k.csv"
+      "partitions": "partitions/esp32_partition_app1856k_fs320k.csv"
     },
     "connectivity": [
       "wifi",
