@@ -147,9 +147,9 @@ typedef struct {
 
   uint8_t       free_2d7[1];               // 2D7
 
-  int32_t       energy_kWhtoday_ph[3];     // 2D8
-  int32_t       energy_kWhtotal_ph[3];     // 2E4
-  int32_t       energy_kWhexport_ph[3];    // 2F0
+  int32_t       energy_kWhtoday_ph[6];     // 2D8   // to be updated, array size from 3 to 6
+  int32_t       energy_kWhtotal_ph[6];     // 2E4
+  int32_t       energy_kWhexport_ph[6];    // 2F0
   uint32_t      utc_time;                  // 2FC
 } TRtcSettings;
 TRtcSettings RtcSettings;

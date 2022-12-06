@@ -30,8 +30,11 @@
 
 #define ENERGY_NONE            0
 #define ENERGY_WATCHDOG        4        // Allow up to 4 seconds before deciding no valid data present
+#ifdef USE_BIOPDU
+#define ENERGY_MAX_PHASES      6
+#else
 #define ENERGY_MAX_PHASES      3
-
+#endif
 #include <Ticker.h>
 
 #define D_CMND_POWERCAL "PowerCal"
@@ -345,7 +348,7 @@ void Energy200ms(void)
     if (RtcTime.valid) {
 
       if (!Energy.kWhtoday_offset_init && (RtcTime.day_of_year == Settings->energy_kWhdoy)) {
-        for (uint32_t i = 0; i < 3; i++) {
+        for (uint32_t i = 0; i < ENERGY_MAX_PHASES; i++) {
           Energy.kWhtoday_offset[i] = Settings->energy_kWhtoday_ph[i];
 //          RtcSettings.energy_kWhtoday_ph[i] = 0;
         }
@@ -353,7 +356,7 @@ void Energy200ms(void)
       }
 
       if (LocalTime() == Midnight()) {
-        for (uint32_t i = 0; i < 3; i++) {
+        for (uint32_t i = 0; i < ENERGY_MAX_PHASES; i++) {
           Settings->energy_kWhyesterday_ph[i] = RtcSettings.energy_kWhtoday_ph[i];
 
           RtcSettings.energy_kWhtotal_ph[i] += RtcSettings.energy_kWhtoday_ph[i];
@@ -393,7 +396,7 @@ void EnergySaveState(void)
 {
   Settings->energy_kWhdoy = (RtcTime.valid) ? RtcTime.day_of_year : 0;
 
-  for (uint32_t i = 0; i < 3; i++) {
+  for (uint32_t i = 0; i < ENERGY_MAX_PHASES; i++) {
     Settings->energy_kWhtoday_ph[i] = RtcSettings.energy_kWhtoday_ph[i];
     Settings->energy_kWhtotal_ph[i] = RtcSettings.energy_kWhtotal_ph[i];
     Settings->energy_kWhexport_ph[i] = RtcSettings.energy_kWhexport_ph[i];
@@ -648,7 +651,7 @@ void ResponseCmndEnergyTotalYesterdayToday(void) {
   char value2_chr[TOPSZ];
   char value3_chr[TOPSZ];
 
-  float energy_yesterday_ph[3];
+  float energy_yesterday_ph[ENERGY_MAX_PHASES];
   for (uint32_t i = 0; i < Energy.phase_count; i++) {
     energy_yesterday_ph[i] = (float)Settings->energy_kWhyesterday_ph[i] / 100000;
     Energy.total[i] = (float)(RtcSettings.energy_kWhtotal_ph[i] + Energy.kWhtoday_offset[i] + Energy.kWhtoday[i]) / 100000;
@@ -951,7 +954,7 @@ void CmndFrequencySet(void) {
 }
 
 void CmndModuleAddress(void) {
-  if ((XdrvMailbox.payload > 0) && (XdrvMailbox.payload < 4) && (1 == Energy.phase_count)) {
+  if ((XdrvMailbox.payload > 0) && (XdrvMailbox.payload < 4) /*&& (1 == Energy.phase_count)*/) {
     Energy.command_code = CMND_MODULEADDRESS;
     if (XnrgCall(FUNC_COMMAND)) {  // Module address
       ResponseCmndDone();
@@ -1117,7 +1120,7 @@ void EnergySnsInit(void)
       Settings->energy_kWhtoday_ph[0],Settings->energy_kWhtoday_ph[1],Settings->energy_kWhtoday_ph[2]
     );
 
-    for (uint32_t i = 0; i < 3; i++) {
+    for (uint32_t i = 0; i < ENERGY_MAX_PHASES; i++) {
 //    Energy.kWhtoday_offset[i] = 0;   // Reset by EnergyDrvInit()
       // 20220805 - Change from https://github.com/arendst/Tasmota/issues/16118
       if (RtcSettingsValid()) {
