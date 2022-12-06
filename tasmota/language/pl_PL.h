@@ -908,6 +908,9 @@
 #define D_SENSOR_CM11_TX       "CM110x TX"
 #define D_SENSOR_CM11_RX       "CM110x RX"
 #define D_SENSOR_FLOWRATEMETER "Flowrate"
+#define D_SENSOR_BIOPDU_PZEM0XX_TX "BioPDU PZEM0XX Tx"
+#define D_SENSOR_BIOPDU_PZEM016_RX "BioPDU PZEM016 Rx"
+#define D_SENSOR_BIOPDU_BIT    "BioPDU Bit"
 
 // Units
 #define D_UNIT_AMPERE "A"
