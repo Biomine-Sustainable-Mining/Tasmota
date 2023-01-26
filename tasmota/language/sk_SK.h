@@ -33,7 +33,7 @@
 
 //#define LANGUAGE_MODULE_NAME         // Enable to display "Module Generic" (ie Spanish), Disable to display "Generic Module" (ie English)
 
-#define LANGUAGE_LCID 1029
+#define LANGUAGE_LCID 1051
 // HTML (ISO 639-1) Language Code
 #define D_HTML_LANGUAGE "sk"
 
@@ -915,6 +915,10 @@
 #define D_SENSOR_CM11_TX       "CM110x TX"
 #define D_SENSOR_CM11_RX       "CM110x RX"
 #define D_SENSOR_FLOWRATEMETER "Flowrate"
+#define D_SENSOR_ME007_TRIG    "ME007 Tri"
+#define D_SENSOR_ME007_RX      "ME007 Rx"
+#define D_SENSOR_TUYAMCUBR_TX  "TuyaMCUBr Tx"
+#define D_SENSOR_TUYAMCUBR_RX  "TuyaMCUBr Rx"
 #define D_SENSOR_BIOPDU_PZEM0XX_TX "BioPDU PZEM0XX Tx"
 #define D_SENSOR_BIOPDU_PZEM016_RX "BioPDU PZEM016 Rx"
 #define D_SENSOR_BIOPDU_BIT    "BioPDU Bit"

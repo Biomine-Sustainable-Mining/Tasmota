@@ -17,7 +17,7 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
-#define SWITCH_V3
+//#define SWITCH_V3
 #ifdef SWITCH_V3
 /*********************************************************************************************\
  * Switch support with input filter
@@ -84,7 +84,8 @@ bool SwitchState(uint32_t index) {
           (PUSHBUTTONHOLD_INV == switchmode) ||
           (FOLLOWMULTI_INV == switchmode) ||
           (PUSHHOLDMULTI_INV == switchmode) ||
-          (PUSHON_INV == switchmode)
+          (PUSHON_INV == switchmode) ||
+          (PUSH_IGNORE_INV == switchmode)
          ) ^ Switch.last_state[index];
 }
 
@@ -406,11 +407,9 @@ void SwitchHandler(uint32_t mode) {
           }
           break;
         case PUSH_IGNORE:
+        case PUSH_IGNORE_INV:
           Switch.last_state[i] = button;                        // Update switch state before publishing
           MqttPublishSensor();
-          break;
-        case PUSH_IGNORE_INV:
-          MqttPublishSensor();                                  // Publishing before update
           break;
         }
         Switch.last_state[i] = button;
