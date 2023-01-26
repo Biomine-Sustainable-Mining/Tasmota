@@ -3,9 +3,12 @@
     Biomine 625x12 Custom Board
     6 x PZEM-004V3 Modbus AC energy sensor support for Tasmota
     3bit serial switch
+    Integrated MCP23008
 
-  Copyright (C) 2021  Theo Arends
-  Copyright (C) 2022  Patched by Fabrizio Amodio
+  Template {"NAME":"Olimex ESP32-PoE-BioPDU","GPIO":[1,10081,10082,1,10016,1,0,0,5536,640,1,1,608,0,5600,0,0,0,0,5568,0,0,0,0,0,0,0,0,1,10080,1,1,10048,0,0,1],"FLAG":0,"BASE":1}
+
+  Copyright (C) 2021       Theo Arends
+  Copyright (C) 2022-2023  Fabrizio Amodio
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -19,20 +22,11 @@
 
   You should have received a copy of the GNU General Public License
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
 */
 
 #ifdef USE_ENERGY_SENSOR
 #ifdef USE_BIOPDU
-/*********************************************************************************************\
- * PZEM-004T V3 - AC 220V 10/100A Energy
- * PZEM-014     - AC 220V 10A Energy
- * PZEM-016     - AC 220V 100A Energy
- *
- * Based on:
- *   PZEM-014,016 docs https://pan.baidu.com/s/1B0MdMgURyjtO1oQa2lavKw password ytkv
- *
- * Hardware Serial will be selected if GPIO1 = [62 PZEM0XX Tx] and GPIO3 = [98 PZEM016 Rx]
-\*********************************************************************************************/
 
 #define XNRG_33 33
 
@@ -42,8 +36,7 @@ const uint32_t BIOPDU_STABILIZE = 30;       // Number of seconds to stabilize co
 #include <TasmotaModbus.h>
 TasmotaModbus *BioPduModbus;
 
-struct BIOPDU
-{
+struct BIOPDU {
   float energy = 0;
   float last_energy = 0;
   uint8_t send_retry = 0;
@@ -54,58 +47,45 @@ struct BIOPDU
   uint8_t current_mux = 99;
 } BioPdu;
 
-void BioPduSetPins(uint8_t current)
-{
-  if (BioPdu.current_mux != current)
-  {
-    // AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("PDU: Mux to %d"), current);
-
-    for (uint8_t p = 0; p < BioPdu.pins; p++)
-    {
+void BioPduSetPins(uint8_t current) {
+  if (BioPdu.current_mux != current) {
+    for (uint8_t p = 0; p < BioPdu.pins; p++) {
       digitalWrite(Pin(GPIO_BIOPDU_BIT, p), (current + 1) & (1 << p) ? 1 : 0);
     }
     BioPdu.current_mux = current;
   }
 }
 
-void BioPduEverySecond(void)
-{
+void BioPduEverySecond(void) {
   static uint32_t lastms = 0;
 
-  if (millis() > lastms + 1000)
-  {
+  if (millis() >= lastms + 1000) {
     lastms = millis();
     EnergyUpdateTotal();
   }
 }
 
-void BioPduEvery250ms(void)
-{
+void BioPduEvery250ms(void) {
   bool data_ready = BioPduModbus->ReceiveReady();
 
-  if (data_ready)
-  {
+  if (data_ready) {
     uint8_t buffer[30]; // At least 5 + (2 * 10) = 25
 
     uint8_t registers = 10;
-    if (ADDR_RECEIVE == BioPdu.address_step)
-    {
+    if (ADDR_RECEIVE == BioPdu.address_step) {
       registers = 2; // Need 1 byte extra as response is F8 06 00 02 00 01 FD A3
       BioPdu.address_step--;
     }
+
     uint8_t error = BioPduModbus->ReceiveBuffer(buffer, registers);
     AddLogBuffer(LOG_LEVEL_DEBUG_MORE, buffer, BioPduModbus->ReceiveCount());
 
-    if (error)
-    {
-      AddLog(LOG_LEVEL_DEBUG, PSTR("PDU: %d/%d error %d"), BIOPDU_DEVICE_ADDRESS, BioPdu.phase, error);
-    }
-    else
-    {
+    if (error) {
+      AddLog(LOG_LEVEL_DEBUG, PSTR("PDU: ph=%d error %d"), BioPdu.phase, error);
+    } else {
       Energy.data_valid[BioPdu.phase] = 0;
-      if (10 == registers)
-      {
 
+      if (10 == registers) {
         //           0     1     2     3     4     5     6     7     8     9           = ModBus register
         //  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24  = Buffer index
         // 01 04 14 08 D1 00 6C 00 00 00 F4 00 00 00 26 00 00 01 F4 00 64 00 00 51 34
@@ -120,52 +100,41 @@ void BioPduEvery250ms(void)
     }
   }
 
-  AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("PDU: dr=%d sr=%d ph=%d st=%d"), data_ready, BioPdu.send_retry, BioPdu.phase, BioPdu.address_step);
+  // AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("PDU: ph=%d st=%d dr=%d sr=%d"), BioPdu.phase, BioPdu.address_step, data_ready, BioPdu.send_retry);
 
-  if (0 == BioPdu.send_retry || data_ready)
-  {
-    if (ADDR_SEND == BioPdu.address_step)
-    {
+  if (0 == BioPdu.send_retry || data_ready) {
+    if (ADDR_SEND == BioPdu.address_step) {
       BioPduModbus->Send(0xF8, 0x06, 0x0002, (uint16_t)BioPdu.address);
       BioPdu.address_step--;
-    }
-    else
-    {
+    } else {
+      uint8_t gpio = MCP230xx_readGPIO(0);
+
       BioPdu.send_retry = 1 /*ENERGY_WATCHDOG*/;
-      for (uint8_t p = 0; p < Energy.phase_count; p++)
-      {
-        if (0 == BioPdu.phase)
-        {
-          BioPdu.phase = Energy.phase_count - 1;
-        }
-        else
-        {
-          BioPdu.phase--;
+      for (uint8_t p = 0; p < Energy.phase_count; p++) {
+        if (++BioPdu.phase == Energy.phase_count) {
+          BioPdu.phase = 0;
         }
 
-        if (digitalRead(Pin(GPIO_REL1, BioPdu.phase)))
-        {
+        // if (digitalRead(Pin(GPIO_REL1, BioPdu.phase)))
+        if ((gpio >> (BioPdu.phase + 1)) & 1) {
           BioPduSetPins(BioPdu.phase);
 
           delay(1);
 
-          BioPduModbus->Send(BIOPDU_DEVICE_ADDRESS /*+ BioPdu.phase*/, 0x04, 0, 10);
+          uint8_t res = BioPduModbus->Send(BIOPDU_DEVICE_ADDRESS /*+ BioPdu.phase*/, 0x04, 0, 10);
+          if (res != 0) {
+            AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("PDU: ph=%d modbus_error="), BioPdu.phase, res);
+          }
           break;
+        }
+        else
+        {
+          // AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("PDU: ph=%d not read"), BioPdu.phase);
         }
       }
     }
-  }
-  else
-  {
+  } else {
     BioPdu.send_retry--;
-    if ((Energy.phase_count > 1) && (0 == BioPdu.send_retry) && (TasmotaGlobal.uptime < BIOPDU_STABILIZE))
-    {
-      // Energy.phase_count--; // Decrement phases if no response after retry within 30 seconds after restart
-      //  if (TasmotaGlobal.discovery_counter)
-      //  {
-      //    TasmotaGlobal.discovery_counter += ENERGY_WATCHDOG + 1; // Don't send Discovery yet, delay by 4s + 1s
-      //  }
-    }
   }
 }
 
@@ -173,48 +142,53 @@ void BioPduSnsInit(void)
 {
   BioPduModbus = new TasmotaModbus(Pin(GPIO_BIOPDU_PZEM016_RX), Pin(GPIO_BIOPDU_PZEM0XX_TX));
   uint8_t result = BioPduModbus->Begin(9600);
-  if (result)
-  {
-    if (2 == result)
-    {
+  if (result) {
+    if (2 == result) {
       ClaimSerial();
     }
-    BioPdu.phase = 0;
-  }
-  else
-  {
+    BioPdu.phase = Energy.phase_count - 1;
+  } else {
     TasmotaGlobal.energy_driver = ENERGY_NONE;
   }
 }
 
-void BioPduDrvInit(void)
-{
-  if (PinUsed(GPIO_BIOPDU_PZEM016_RX) && PinUsed(GPIO_BIOPDU_PZEM0XX_TX) && PinUsed(GPIO_BIOPDU_BIT))
-  {
+void BioPduDrvInit(void) {
+  if (PinUsed(GPIO_BIOPDU_PZEM016_RX) 
+   && PinUsed(GPIO_BIOPDU_PZEM0XX_TX) 
+   && PinUsed(GPIO_BIOPDU_BIT)) {
     TasmotaGlobal.energy_driver = XNRG_33;
 
-    AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("PDU: checking pins"));
+    Energy.voltage_common = false;
+    Energy.frequency_common = false;
 
-    for (uint8_t p = 0; p < 3; p++)
-    {
-      if (PinUsed(GPIO_BIOPDU_BIT, p))
-      {
+    AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("PDU: checking pins..."));
+
+    for (uint8_t p = 0; p < 3; p++) {
+
+      if (PinUsed(GPIO_BIOPDU_BIT, p)) {
         pinMode(Pin(GPIO_BIOPDU_BIT, p), OUTPUT);
         digitalWrite(Pin(GPIO_BIOPDU_BIT, p), 0);
 
         AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("PDU: Add GPIO %d/%d for pin %d"), GPIO_BIOPDU_BIT, p, BioPdu.pins);
 
         BioPdu.pins++;
-      }
-      else
-      {
+      } else {
         break;
       }
     }
 
     Energy.phase_count = std::min((uint8_t)(pow(2, BioPdu.pins) - 1), (uint8_t)ENERGY_MAX_PHASES); // Start off with 6 phases
 
-    AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("PDU: number of pins=%d, phase=%d (%d <-> %d)"), BioPdu.pins, Energy.phase_count, (uint8_t)(pow(2, BioPdu.pins) - 1), (uint8_t)ENERGY_MAX_PHASES);
+    AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("PDU: pins count=%d, phase count=%d"), BioPdu.pins, Energy.phase_count);
+
+    for (uint32_t phase = 0; phase < Energy.phase_count; phase++) {
+      Energy.current[phase] = 0.0f;
+      Energy.apparent_power[phase] = 0.0f;
+      Energy.reactive_power[phase] = 0.0f;
+      Energy.power_factor[phase] = 0.0f;
+      Energy.frequency[phase] = 0.0f;
+      Energy.export_active[phase] = 0.0f;
+    }
   }
 }
 
@@ -222,12 +196,9 @@ bool BioPduCommand(void)
 {
   bool serviced = true;
 
-  AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("PDU: cc %d = %d ?"), Energy.command_code, CMND_MODULEADDRESS);
-  if (CMND_MODULEADDRESS == Energy.command_code)
-  {
+  if (CMND_MODULEADDRESS == Energy.command_code) {
     BioPdu.address = XdrvMailbox.payload; // Valid addresses are 1, 2 and 3
     BioPdu.address_step = ADDR_SEND;
-    AddLog(LOG_LEVEL_DEBUG_MORE, PSTR("PDU: quering..."));
   }
   else
     serviced = false; // Unknown command
@@ -243,17 +214,15 @@ bool Xnrg33(uint32_t function)
 {
   bool result = false;
 
-  switch (function)
-  {
+  switch (function) {
+
   case FUNC_EVERY_250_MSECOND:
-    if (TasmotaGlobal.uptime > 4)
-    {
+    if (TasmotaGlobal.uptime > 4) {
       BioPduEvery250ms();
     } // Fix start up issue #5875
     break;
   case FUNC_ENERGY_EVERY_SECOND:
-    if (TasmotaGlobal.uptime > BIOPDU_STABILIZE)
-    {
+    if (TasmotaGlobal.uptime > BIOPDU_STABILIZE)  {
       BioPduEverySecond();
     }
     break;
