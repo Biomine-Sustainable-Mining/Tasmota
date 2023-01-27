@@ -204,10 +204,8 @@ char* WebEnergyFormat(char* result, float* input, uint32_t resolution, uint32_t 
     // </td><td style='text-align:right'>1.23</td><td>&nbsp;</td><td style='text-align:right'>1.23</td><td>&nbsp;</td><td style='text-align:right'>1.23</td><td>&nbsp;</td><td>
     // </td><td style='text-align:right'>1.23</td><td>&nbsp;</td><td style='text-align:right'>1.23</td><td>&nbsp;</td><td style='text-align:right'>1.23</td><td>&nbsp;</td><td style='text-align:right'>1.23</td><td>&nbsp;</td><td>
     for (uint32_t i = 0; i < Energy.phase_count; i++) {
-      float val = 0.0f;
-      if (!isnan(input[i])) { val = input[i]; }
       ext_snprintf_P(result, GUISZ, PSTR("%s<td style='text-align:%s'>%*_f</td><td>&nbsp;</td>"),
-        result, (Settings->flag5.gui_table_align)?PSTR("right"):PSTR("left"), resolution, &val);
+        result, (Settings->flag5.gui_table_align)?PSTR("right"):PSTR("left"), resolution, &input[i]);
     }
   }
   ext_snprintf_P(result, GUISZ, PSTR("%s</td><td>&nbsp;"), result);
