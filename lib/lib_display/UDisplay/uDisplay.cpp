@@ -645,6 +645,7 @@ void uDisplay::delay_arg(uint32_t args) {
 #define EP_SEND_FRAME 0x68
 #define EP_BREAK_RR_EQU 0x69
 #define EP_BREAK_RR_NEQ 0x6a
+#define EP_ESCAPE 0x6b
 
 extern int32_t ESP_ResetInfoReason();
 
@@ -724,6 +725,12 @@ uint16_t index = 0;
             }
           }
           break;
+        case EP_ESCAPE:
+          iob = dsp_cmds[cmd_offset++];
+          index++;
+          goto docmd;
+          break;
+
       }
 #ifdef UDSP_DEBUG
       if (args & 1) {
@@ -735,6 +742,7 @@ uint16_t index = 0;
         delay_arg(args);
       }
     } else {
+docmd:      
       ulcd_command(iob);
       uint8_t args = dsp_cmds[cmd_offset++];
       index++;
@@ -893,7 +901,7 @@ Renderer *uDisplay::Init(void) {
       reset_pin(50, 200);
     }
 
-    send_spi_cmds(1, dsp_ncmds-1);
+    send_spi_cmds(0, dsp_ncmds);
 
     SPI_END_TRANSACTION
 
