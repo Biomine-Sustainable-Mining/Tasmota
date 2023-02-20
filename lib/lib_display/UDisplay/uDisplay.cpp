@@ -901,7 +901,8 @@ Renderer *uDisplay::Init(void) {
       reset_pin(50, 200);
     }
 
-    send_spi_cmds(0, dsp_ncmds);
+    //send_spi_cmds(0, dsp_ncmds);
+    send_spi_cmds(1, dsp_ncmds-1);
 
     SPI_END_TRANSACTION
 
