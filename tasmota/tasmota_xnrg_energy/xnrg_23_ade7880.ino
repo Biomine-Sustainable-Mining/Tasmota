@@ -444,13 +444,17 @@ bool Ade7880SetCalibrate(void) {
     uint32_t start = millis();
 #endif  // ADE7880_PROFILING
 
-  int reset = Pin(GPIO_RESET);
-  if (-1 == reset) { reset = 16; }                                         // Reset pin ADE7880 in Shelly 3EM
-  pinMode(reset, OUTPUT);
-  digitalWrite(reset, 0);
-  delay(1);
-  digitalWrite(reset, 1);
-  pinMode(reset, INPUT);
+  int pin_reset = Pin(GPIO_RESET);
+#ifdef ESP8266
+  if (-1 == pin_reset) { pin_reset = 16; }                                 // Reset pin ADE7880 in Shelly 3EM
+#endif
+  if (pin_reset >= 0) {
+    pinMode(pin_reset, OUTPUT);
+    digitalWrite(pin_reset, 0);
+    delay(1);
+    digitalWrite(pin_reset, 1);
+    pinMode(pin_reset, INPUT);
+  }
 
   Ade7880.cycle_count = 2;                                                 // Skip first two cycles
 
@@ -742,14 +746,13 @@ const char HTTP_ADE7880_CURRENT[] PROGMEM = "{s}" D_CURRENT_NEUTRAL "{m}%s " D_U
 #endif  // USE_WEBSERVER
 
 void Ade7880Show(bool json) {
-  char value_chr[GUISZ];
 
   if (json) {
     ResponseAppend_P(PSTR(",\"" D_JSON_CURRENT_NEUTRAL "\":%s"),
-      EnergyFormat(value_chr, &Ade7880.neutral_current, Settings->flag2.current_resolution, 1));
+      EnergyFmt(&Ade7880.neutral_current, Settings->flag2.current_resolution, 1));
 #ifdef USE_WEBSERVER
   } else {
-    WSContentSend_PD(HTTP_ADE7880_CURRENT, WebEnergyFormat(value_chr, &Ade7880.neutral_current, Settings->flag2.current_resolution, 1));
+    WSContentSend_PD(HTTP_ADE7880_CURRENT, WebEnergyFmt(&Ade7880.neutral_current, Settings->flag2.current_resolution, 1));
 #endif  // USE_WEBSERVER
   }
 }
