@@ -980,6 +980,7 @@ void SettingsDefaultSet2(void) {
   if (Settings->sleep < 50) {
     Settings->sleep = 50;                // Default to 50 for sleep, for now
   }
+  Settings->battery_level_percent = 101;
 
   // Module
   flag.interlock |= APP_INTERLOCK_MODE;
@@ -1289,12 +1290,12 @@ void SettingsDefaultSet2(void) {
 
   // Display
 //  Settings->display_model = 0;
-  Settings->display_mode = 1;
+  Settings->display_mode = 0;
   Settings->display_refresh = 2;
   Settings->display_rows = 2;
   Settings->display_cols[0] = 16;
   Settings->display_cols[1] = 8;
-  Settings->display_dimmer_protected = -10;  // 10%
+  Settings->display_dimmer_protected = -50;  // 50%
   Settings->display_size = 1;
   Settings->display_font = 1;
 //  Settings->display_rotate = 0;
@@ -1739,6 +1740,9 @@ void SettingsDelta(void) {
       RtcSettings.energy_usage.last_return_kWhtotal /= 100;
       RtcSettings.energy_usage.last_usage_kWhtotal /= 100;
 #endif
+    }
+    if (Settings->version < 0x0D000003) {  // 13.0.0.3
+      Settings->battery_level_percent = 101;
     }
 
     Settings->version = VERSION;
