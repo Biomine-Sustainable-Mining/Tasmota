@@ -90,6 +90,19 @@
 #define SML_OBIS_LINE
 #endif
 
+#ifdef ESP32
+#ifndef NO_USE_SML_CANBUS
+// canbus support
+#undef USE_SML_CANBUS
+#define USE_SML_CANBUS
+#endif
+#endif
+
+#ifdef USE_SML_TCP_SECURE
+#define USE_SML_TCP_IP_STR
+#endif
+
+
 // median filter eliminates outliers, but uses much RAM and CPU cycles
 // 672 bytes extra RAM with SML_MAX_VARS = 16
 // default compile on, but must be enabled by descriptor flag 16
@@ -104,6 +117,27 @@
 #ifdef USE_SML_DECRYPT
 #include "han_Parser.h"
 #endif
+
+
+#ifdef USE_SML_CANBUS
+
+#ifdef ESP8266
+// esp8266 uses SPI MPC2515
+#undef SML_CAN_MASKS
+#undef SML_CAN_FILTERS
+#define SML_CAN_MASKS 2
+#define SML_CAN_FILTERS 6
+#include "mcp2515.h"
+#else
+// esp32 uses native twai
+#undef SML_CAN_MASKS
+#undef SML_CAN_FILTERS
+#define SML_CAN_MASKS 1
+#define SML_CAN_FILTERS 1
+#include <can.h>
+#include "driver/twai.h"
+#endif
+#endif // USE_SML_CANBUS
 
 /* special options per meter
 1:
@@ -145,6 +179,17 @@ time serial pointer is reset to zero
 on esp32 the uart index may be set, normally it is allocated from 2 down to 0 automatically
 thus you can combine serial SML with serial script , berry or serial drivers.
 
+8:
+on esp32 1 filter mask
+on esp8266 2 filter masks
+
+9:
+on esp32 1 filter
+on esp8266 6 filters
+
+A:
+decryption flags (8 bits)
+
 */
 
 //#define MODBUS_DEBUG
@@ -160,7 +205,7 @@ class SML_ESP32_SERIAL : public Stream {
 public:
 	SML_ESP32_SERIAL(uint32_t uart_index);
   virtual ~SML_ESP32_SERIAL();
-  bool begin(uint32_t speed, uint32_t smode, int32_t recpin, int32_t trxpin);
+  bool begin(uint32_t speed, uint32_t smode, int32_t recpin, int32_t trxpin, int32_t invert);
   int32_t peek(void);
   int read(void) override;
   size_t write(uint8_t byte) override;
@@ -211,7 +256,11 @@ SML_ESP32_SERIAL::~SML_ESP32_SERIAL(void) {
 }
 
 void SML_ESP32_SERIAL::setbaud(uint32_t speed) {
+#ifdef __riscv
+  m_bit_time = 1000000 / speed;
+#else
   m_bit_time = ESP.getCpuFreqMHz() * 1000000 / speed;
+#endif
 }
 
 void SML_ESP32_SERIAL::end(void) {
@@ -220,7 +269,7 @@ void SML_ESP32_SERIAL::end(void) {
   }
 }
 
-bool SML_ESP32_SERIAL::begin(uint32_t speed, uint32_t smode, int32_t recpin, int32_t trxpin) {
+bool SML_ESP32_SERIAL::begin(uint32_t speed, uint32_t smode, int32_t recpin, int32_t trxpin, int invert) {
   if (!m_valid) { return false; }
 
   m_buffer = 0;
@@ -240,7 +289,7 @@ bool SML_ESP32_SERIAL::begin(uint32_t speed, uint32_t smode, int32_t recpin, int
     m_tx_pin = trxpin;
     hws = new HardwareSerial(uart_index);
     if (hws) {
-      hws->begin(speed, cfgmode, m_rx_pin, m_tx_pin);
+      hws->begin(speed, cfgmode, m_rx_pin, m_tx_pin, invert);
     }
   }
   return true;
@@ -321,13 +370,21 @@ void IRAM_ATTR SML_ESP32_SERIAL::rxRead(void) {
 
   if (!level && !ss_index) {
     // start condition
+#ifdef __riscv
+    ss_bstart = micros() - (m_bit_time / 4);
+#else
     ss_bstart = ESP.getCycleCount() - (m_bit_time / 4);
+#endif
     ss_byte = 0;
     ss_index++;
   } else {
     // now any bit changes go here
     // calc bit number
+#ifdef __riscv
+    diff = (micros() - ss_bstart) / m_bit_time;
+#else
     diff = (ESP.getCycleCount() - ss_bstart) / m_bit_time;
+#endif
 
     if (!level && diff > SML_LASTBIT) {
       // start bit of next byte, store  and restart
@@ -340,8 +397,11 @@ void IRAM_ATTR SML_ESP32_SERIAL::rxRead(void) {
         m_buffer[m_in_pos] = ss_byte >> 1;
         m_in_pos = next;
       }
-
+#ifdef __riscv
+      ss_bstart = micros() - (m_bit_time / 4);
+#else
       ss_bstart = ESP.getCycleCount() - (m_bit_time / 4);
+#endif
       ss_byte = 0;
       ss_index = 1;
       return;
@@ -377,6 +437,15 @@ typedef union {
   };
 } TRX_EN_TYPE;
 
+typedef union {
+  uint8_t data;
+  struct {
+    uint8_t SO_DWS74_BUG : 1;
+    uint8_t SO_OBIS_LINE : 1;
+    uint8_t SO_TRX_INVERT : 1;
+  };
+} SO_FLAGS;
+
 #ifndef TMSBSIZ
 #define TMSBSIZ 256
 #endif
@@ -385,19 +454,20 @@ typedef union {
 #define SML_STIMEOUT 1000
 #endif
 
-#define SO_DWS74_BUG 1
-#define SO_OBIS_LINE 2
-
 #define METER_ID_SIZE 24
 
 #define SML_CRYPT_SIZE 16
+
+#ifndef SML_PREFIX_SIZE
+#define SML_PREFIX_SIZE 8
+#endif
 
 struct METER_DESC {
   int8_t srcpin;
   uint8_t type;
   uint16_t flag;
   int32_t params;
-  char prefix[8];
+  char prefix[SML_PREFIX_SIZE];
   int8_t trxpin;
   uint8_t tsecs;
   char *txmem;
@@ -413,7 +483,7 @@ struct METER_DESC {
   uint16_t sibsiz;
 	uint32_t lastms;
 	uint16_t tout_ms;
-  uint8_t so_flags;
+  SO_FLAGS so_flags;
   char meter_id[METER_ID_SIZE];
 #ifdef USE_SML_SPECOPT
   uint32_t so_obis1;
@@ -439,6 +509,7 @@ struct METER_DESC {
 
 #ifdef USE_SML_DECRYPT
 	bool use_crypt = false;
+  uint8_t crypflags;
 	uint8_t last_iob;
 	uint8_t key[SML_CRYPT_SIZE];
 	Han_Parser *hp;
@@ -448,18 +519,37 @@ struct METER_DESC {
 #endif // USE_SML_DECRYPT
 
 #ifdef USE_SML_TCP
+
+#ifdef USE_SML_TCP_IP_STR
+  char ip_addr[16];
+#else
   IPAddress ip_addr;
-#ifdef TCP_CLIENT_SECURE
+#endif // USE_SML_TCP_IP_STR
+
+#ifdef USE_SML_TCP_SECURE
   WiFiClientSecure *client;
 #else
   WiFiClient *client;
+#endif // USE_SML_TCP_SECURE
+
+#endif // USE_SML_TCP
+
+
+#ifdef USE_SML_CANBUS
+#ifdef ESP8266
+  MCP2515 *mcp2515;
+#else
+  //twai_handle_t *canp;
 #endif
+  uint32_t can_masks[SML_CAN_MASKS];
+  uint32_t can_filters[SML_CAN_FILTERS];
+#endif // USE_SML_CANBUS
 
 #ifdef ESP32
   int8_t uart_index;
 #endif
-#endif
 };
+
 
 
 #define TCP_MODE_FLG 0x7f
@@ -523,7 +613,11 @@ struct SML_GLOBS {
 #endif
 	uint8_t *script_meter;
 	struct METER_DESC *mp;
+  uint8_t to_cnt;
   bool ready;
+#ifdef USE_SML_CANBUS
+  uint8_t twai_installed;
+#endif // USE_SML_CANBUS
 } sml_globs;
 
 
@@ -609,7 +703,11 @@ uint16_t Serial_available() {
     if (!meter_desc[num].meter_ss) return 0;
     return meter_desc[num].meter_ss->available();
   } else {
-    return meter_desc[num].client->available();
+    if (meter_desc[num].client) {
+      return meter_desc[num].client->available();
+    } else {
+      return 0;
+    }
   }
 }
 
@@ -621,7 +719,11 @@ uint8_t Serial_read() {
     if (!meter_desc[num].meter_ss) return 0;
     return meter_desc[num].meter_ss->read();
   } else {
-    return meter_desc[num].client->read();
+    if (meter_desc[num].client) {
+      return meter_desc[num].client->read();
+    } else {
+      return 0;
+    }
   }
 }
 
@@ -633,7 +735,11 @@ uint8_t Serial_peek() {
     if (!meter_desc[num].meter_ss) return 0;
     return meter_desc[num].meter_ss->peek();
   } else {
-    return meter_desc[num].client->peek();
+    if (meter_desc[num].client) {
+      return meter_desc[num].client->peek();
+    } else {
+      return 0;
+    }
   }
 }
 
@@ -657,8 +763,9 @@ void dump2log(void) {
   //if (!SML_SAVAILABLE) return;
 	if (!sml_globs.log_data) return;
 
+  struct METER_DESC *mp = &meter_desc[meter];
+
 #ifdef USE_SML_DECRYPT
-	struct METER_DESC *mp = &meter_desc[meter];
 	if (mp->use_crypt == true) {
 			d_lastms = millis();
       while ((millis() - d_lastms) < 50) {
@@ -666,7 +773,7 @@ void dump2log(void) {
 					d_lastms = millis();
 					uint16_t logsiz;
 					uint8_t *payload;
-					if (mp->hp->readHanPort(&payload, &logsiz)) {
+					if (mp->hp->readHanPort(&payload, &logsiz, mp->crypflags)) {
 						if (logsiz > mp->sbsiz) {
 							logsiz = mp->sbsiz;
 						}
@@ -825,6 +932,81 @@ void dump2log(void) {
       	}
 				}
 				break;
+ #ifdef USE_SML_CANBUS       
+      case 'C':
+ #ifdef ESP8266     
+        if (mp->mcp2515 == nullptr) break;
+        { struct can_frame canFrame;
+        while (mp->mcp2515->checkReceive()) {
+            if (mp->mcp2515->readMessage(&canFrame) == MCP2515::ERROR_OK) {
+              mp->sbuff[0] = canFrame.can_id >> 24;
+              mp->sbuff[1] = canFrame.can_id >> 16;
+              mp->sbuff[2] = canFrame.can_id >> 8;
+              mp->sbuff[3] = canFrame.can_id;
+              mp->sbuff[4] = canFrame.can_dlc;
+              for (int i = 0; i < canFrame.can_dlc; i++) {
+                mp->sbuff[5 + i] = canFrame.data[i];
+              }
+              sml_dump_start(' ');
+              for (uint8_t index = 0; index < canFrame.can_dlc + 5; index++) {
+                sprintf(&sml_globs.log_data[sml_globs.sml_logindex], "%02x", mp->sbuff[index]);
+                sml_globs.sml_logindex += 2;
+                if (index == 3) {
+                  sml_globs.log_data[sml_globs.sml_logindex] = ':';
+                  sml_globs.sml_logindex++;
+                  sml_globs.log_data[sml_globs.sml_logindex] = ' ';
+                  sml_globs.sml_logindex++;
+                }
+              }
+              sml_globs.log_data[sml_globs.sml_logindex] = 0;
+              AddLogData(LOG_LEVEL_INFO, sml_globs.log_data);
+            } else {
+              if (mp->mcp2515->checkError()) {
+                uint8_t errFlags = mp->mcp2515->getErrorFlags();
+                mp->mcp2515->clearRXnOVRFlags();
+                AddLog(LOG_LEVEL_DEBUG, PSTR("SML CAN: Received error %d"), errFlags);
+              }
+            }
+        }
+        }
+        break;
+#else
+        // esp32 native CAN
+        if (!sml_globs.twai_installed) break;
+        {
+        uint32_t alerts_triggered = sml_can_check_alerts();
+
+        // Check if message is received
+        if (alerts_triggered & TWAI_ALERT_RX_DATA) {
+          twai_message_t message;
+          while (twai_receive(&message, 0) == ESP_OK) {
+            mp->sbuff[0] = message.identifier >> 24;
+            mp->sbuff[1] = message.identifier >> 16;
+            mp->sbuff[2] = message.identifier >> 8;
+            mp->sbuff[3] = message.identifier;
+            mp->sbuff[4] = message.data_length_code;
+            for (int i = 0; i < message.data_length_code; i++) {
+              mp->sbuff[5 + i] = message.data[i];
+            }
+            sml_dump_start(' ');
+            for (uint8_t index = 0; index < message.data_length_code + 5; index++) {
+              sprintf(&sml_globs.log_data[sml_globs.sml_logindex], "%02x", mp->sbuff[index]);
+              sml_globs.sml_logindex += 2;
+              if (index == 3) {
+                  sml_globs.log_data[sml_globs.sml_logindex] = ':';
+                  sml_globs.sml_logindex++;
+                  sml_globs.log_data[sml_globs.sml_logindex] = ' ';
+                  sml_globs.sml_logindex++;
+              }
+            }
+            sml_globs.log_data[sml_globs.sml_logindex] = 0;
+            AddLogData(LOG_LEVEL_INFO, sml_globs.log_data);
+          }
+        }
+        }
+        break;
+#endif
+#endif // USE_SML_CANBUS
     	default:
       	// raw dump
       	d_lastms = millis();
@@ -991,7 +1173,7 @@ double dval;
                     break;
                 case 2:
                     // signed 16 bit
-                    if (meter_desc[index].so_flags & SO_DWS74_BUG) {
+                    if (meter_desc[index].so_flags.SO_DWS74_BUG) {
                       if (scaler == -2) {
                         value = (uint32_t)uvalue;
                       } else {
@@ -1175,6 +1357,19 @@ void ebus_esc(uint8_t *ebus_buffer, unsigned char len) {
 
 }
 
+// check ebus escapes
+uint8_t check_ebus_esc(uint8_t *ebus_buffer, unsigned char len) {
+    short count,count1;
+    count1 = 0;
+    for (count = 0; count < len; count++) {
+        if (ebus_buffer[count] == EBUS_ESC) {
+            //found escape
+            count1++;
+        }
+    }
+    return count1;
+}
+
 uint8_t ebus_crc8(uint8_t data, uint8_t crc_init) {
 	uint8_t crc;
 	uint8_t polynom;
@@ -1233,7 +1428,7 @@ void sml_shift_in(uint32_t meters, uint32_t shard) {
 			mp->lastms = millis();
 			uint16_t len;
 			uint8_t *payload;
-			if (mp->hp->readHanPort(&payload, &len)) {
+			if (mp->hp->readHanPort(&payload, &len, mp->crypflags)) {
 				if (len > mp->sbsiz) {
 					len = mp->sbsiz;
 				}
@@ -1257,13 +1452,17 @@ void sml_shift_in(uint32_t meters, uint32_t shard) {
   if (mp->srcpin != TCP_MODE_FLG) {
     iob = (uint8_t)mp->meter_ss->read(); 
   } else {
-    iob = (uint8_t)mp->client->read();
+    if (mp->client) {
+      iob = (uint8_t)mp->client->read();
+    } else {
+      iob = 0;
+    }
   }
 
   switch (mp->type) {
     case 'o':
       // asci obis
-      if (!(mp->so_flags & SO_OBIS_LINE)) {
+      if (!(mp->so_flags.SO_OBIS_LINE)) {
         mp->sbuff[mp->sbsiz - 1] = iob & 0x7f;
       } else {
         iob &= 0x7f;
@@ -1292,6 +1491,7 @@ void sml_shift_in(uint32_t meters, uint32_t shard) {
 			uint32_t timediff = millis() - mp->lastms;
 			if (timediff > mp->tout_ms) {
 				mp->spos = 0;
+        SML_Decode(meters);
 				AddLog(LOG_LEVEL_DEBUG, PSTR("SML: sync"));
 			}
 			mp->lastms = millis();
@@ -1347,8 +1547,11 @@ void sml_shift_in(uint32_t meters, uint32_t shard) {
           uint8_t tlen = (mp->sbuff[4] << 8) | mp->sbuff[5];
           if (mp->spos == 6 + tlen) {
             mp->spos = 0;
+            memmove(&mp->sbuff[0], &mp->sbuff[6], mp->sbsiz - 6);
             SML_Decode(meters);
-            mp->client->flush();
+            if (mp->client) {
+              mp->client->flush();
+            }
             //Hexdump(mp->sbuff + 6, 10);
           }
         }
@@ -1398,16 +1601,16 @@ void sml_shift_in(uint32_t meters, uint32_t shard) {
       if (iob == EBUS_SYNC) {
         // should be end of telegramm
         // QQ,ZZ,PB,SB,NN ..... CRC, ACK SYNC
-        if (mp->spos > 4 + 5) {
+        if (mp->spos > 5 && mp->spos > mp->sbuff[4] + 5) {
           // get telegramm lenght
-          uint16_t tlen = mp->sbuff[4] + 5;
+          uint16_t tlen = mp->sbuff[4] + 5 + check_ebus_esc(mp->sbuff, mp->spos);
           // test crc
-          if (mp->sbuff[tlen] = ebus_CalculateCRC(mp->sbuff, tlen)) {
-              ebus_esc(mp->sbuff, tlen);
+          if (mp->sbuff[tlen] == ebus_CalculateCRC(mp->sbuff, tlen)) {
+              ebus_esc(mp->sbuff, mp->spos);
               SML_Decode(meters);
           } else {
               // crc error
-              //AddLog(LOG_LEVEL_INFO, PSTR("ebus crc error"));
+              AddLog(LOG_LEVEL_INFO, PSTR("ebus crc error"));
           }
         }
         mp->spos = 0;
@@ -1436,6 +1639,7 @@ uint32_t meters;
 
     for (meters = 0; meters < sml_globs.meters_used; meters++) {
       struct METER_DESC *mp = &meter_desc[meters];
+      if (mp->type == 'C') continue;
       if (mp->type != 'c') {
         if (mp->srcpin != TCP_MODE_FLG) {
           if (!mp->meter_ss) continue;
@@ -1447,9 +1651,11 @@ uint32_t meters;
             sml_shift_in(meters, 0);
           }
         } else {
-#ifdef USE_SML_TCP          
-          while (mp->client->available()){
-            sml_shift_in(meters, 0);
+#ifdef USE_SML_TCP
+          if (mp->client) {    
+            while (mp->client->available()){
+              sml_shift_in(meters, 0);
+            }
           }
 #endif
         }
@@ -1730,7 +1936,7 @@ void SML_Decode(uint8_t index) {
         }
         if (sml_globs.mp[mindex].type == 'o' || sml_globs.mp[mindex].type == 'c') {
           if (*mp++ != *cp++) {
-            found=0;
+            found = 0;
           }
         } else {
           if (sml_globs.mp[mindex].type == 's') {
@@ -1790,7 +1996,9 @@ void SML_Decode(uint8_t index) {
         							}
 #endif
 										}
-									}
+									} else {
+                    found = 0;
+                  }
 									break;
 								}
 								uint8_t iob;
@@ -1818,9 +2026,29 @@ void SML_Decode(uint8_t index) {
                   cp += skip;
                 }
               }
+            } else if (!strncmp(mp, "U64", 3)) {
+              uint32_t valh = (cp[0]<<24) | (cp[1]<<16) | (cp[2]<<8) | (cp[3]<<0);
+              uint32_t vall = (cp[4]<<24) | (cp[5]<<16) | (cp[6]<<8) | (cp[7]<<0);
+              uint64_t val = ((uint64_t)valh<<32) | vall;
+              mp += 3;
+              cp += 8;
+              ebus_dval = val;
+              mbus_dval = val;
+            } else if (!strncmp(mp, "u64", 3)) {
+              uint64_t valh = (cp[1]<<24) | (cp[0]<<16) | (cp[3]<<8) | (cp[2]<<0);
+              uint64_t vall = (cp[5]<<24) | (cp[4]<<16) | (cp[7]<<8) | (cp[6]<<0);
+              uint64_t val = ((uint64_t)valh<<32) | vall;
+              mp += 3;
+              cp += 8;
+              ebus_dval = val;
+              mbus_dval = val;
+            } else if (!strncmp(mp, "U32", 3)) {
+              mp += 3;
+              goto U32_do;
             } else if (!strncmp(mp, "UUuuUUuu", 8)) {
-              uint32_t val = (cp[0]<<24) | (cp[1]<<16) | (cp[2]<<8) | (cp[3]<<0);
               mp += 8;
+              U32_do:
+              uint32_t val = (cp[0]<<24) | (cp[1]<<16) | (cp[2]<<8) | (cp[3]<<0);
               cp += 4;
               if (*mp == 's') {
                 mp++;
@@ -1829,9 +2057,13 @@ void SML_Decode(uint8_t index) {
               }
               ebus_dval = val;
               mbus_dval = val;
+            } else if (!strncmp(mp, "u32", 3)) {
+              mp += 3;
+              goto u32_do;
             } else if (!strncmp(mp, "uuUUuuUU", 8)) {
-              uint32_t val = (cp[1]<<24) | (cp[0]<<16) | (cp[3]<<8) | (cp[2]<<0);
               mp += 8;
+              u32_do:
+              uint32_t val = (cp[1]<<24) | (cp[0]<<16) | (cp[3]<<8) | (cp[2]<<0);
               cp += 4;
               if (*mp == 's') {
                 mp++;
@@ -1846,9 +2078,13 @@ void SML_Decode(uint8_t index) {
               ebus_dval = val;
               mp += 4;
               cp += 2;
+            } else if (!strncmp(mp, "S32", 3)) {
+              mp += 3;
+              goto S32_do;
             } else if (!strncmp(mp, "SSssSSss", 8)) {
-              int32_t val = (cp[0]<<24) | (cp[1]<<16) | (cp[2]<<8) | (cp[3]<<0);
               mp += 8;
+              S32_do:
+              int32_t val = (cp[0]<<24) | (cp[1]<<16) | (cp[2]<<8) | (cp[3]<<0);
               cp += 4;
               if (*mp == 's') {
                 mp++;
@@ -1857,9 +2093,13 @@ void SML_Decode(uint8_t index) {
               }
               ebus_dval = val;
               mbus_dval = val;
+            } else if (!strncmp(mp, "s32", 3)) {
+              mp += 3;
+              goto s32_do;
             } else if (!strncmp(mp, "ssSSssSS", 8)) {
-              int32_t val = (cp[1]<<24) | (cp[0]<<16) | (cp[3]<<8) | (cp[2]<<0);
               mp += 8;
+              s32_do:
+              int32_t val = (cp[1]<<24) | (cp[0]<<16) | (cp[3]<<8) | (cp[2]<<0);
               cp += 4;
               if (*mp == 's') {
                 mp++;
@@ -2106,7 +2346,7 @@ void SML_Decode(uint8_t index) {
         } else {
           double dval;
           char type = sml_globs.mp[mindex].type;
-          if (type != 'e' && type != 'r' && type != 'R' && type != 'm' && type != 'M' && type != 'k' && type != 'p' && type != 'v') {
+          if (type != 'C' && type != 'e' && type != 'r' && type != 'R' && type != 'm' && type != 'M' && type != 'k' && type != 'p' && type != 'v') {
             // get numeric values
             if (type == 'o' || type == 'c') {
               if (*mp == '(') {
@@ -2131,8 +2371,27 @@ void SML_Decode(uint8_t index) {
                   goto getstr;
                 }
                 dval = CharToDouble((char*)lcp);
+              } else if (*mp == 's') {
+                  mp++;
+                  char delim = *mp;
+                  mp++;
+                  uint8_t toskip = strtol((char*)mp,(char**)&mp, 10);
+                  mp++;
+                  char *lcp = (char*)cp;
+                  if (toskip) {
+                    char *bp = (char*)cp;
+                    for (uint32_t cnt = 0; cnt < toskip; cnt++) {
+                      bp = strchr(bp, delim);
+                      if (!bp) {
+                        break;
+                      }
+                      bp++;
+                      lcp = bp;
+                    }
+                  }
+                  dval = CharToDouble((char*)lcp);
               } else {
-                dval = CharToDouble((char*)cp);
+                  dval = CharToDouble((char*)cp);
               }
             } else {
               dval = sml_getvalue(cp, mindex);
@@ -2158,11 +2417,13 @@ void SML_Decode(uint8_t index) {
                 dval = mbus_dval;
                 mp++;
               } else {
-                uint16_t pos = meter_desc[mindex].sbuff[2] + 3;
-                if (pos > (meter_desc[mindex].sbsiz - 2)) pos = meter_desc[mindex].sbsiz - 2;
-                uint16_t crc = MBUS_calculateCRC(&meter_desc[mindex].sbuff[0], pos, 0xFFFF);
-                if (lowByte(crc) != meter_desc[mindex].sbuff[pos]) goto nextsect;
-                if (highByte(crc) != meter_desc[mindex].sbuff[pos + 1]) goto nextsect;
+                if (meter_desc[mindex].srcpin != TCP_MODE_FLG) {
+                  uint16_t pos = meter_desc[mindex].sbuff[2] + 3;
+                  if (pos > (meter_desc[mindex].sbsiz - 2)) pos = meter_desc[mindex].sbsiz - 2;
+                  uint16_t crc = MBUS_calculateCRC(&meter_desc[mindex].sbuff[0], pos, 0xFFFF);
+                  if (lowByte(crc) != meter_desc[mindex].sbuff[pos]) goto nextsect;
+                  if (highByte(crc) != meter_desc[mindex].sbuff[pos + 1]) goto nextsect;
+                }
                 dval = mbus_dval;
                 //AddLog(LOG_LEVEL_INFO, PSTR(">> %s"),mp);
                 mp++;
@@ -2176,7 +2437,6 @@ void SML_Decode(uint8_t index) {
                 dval = ebus_dval;
               }
             }
-
           }
 #ifdef USE_SML_MEDIAN_FILTER
           if (sml_globs.mp[mindex].flag & 16) {
@@ -2297,7 +2557,7 @@ void SML_Show(boolean json) {
           tpowstr[i] = 0;
           // export html
           //snprintf_P(b_mqtt_data, sizeof(b_mqtt_data), "%s{s}%s{e}", b_mqtt_data,tpowstr);
-          WSContentSend_PD(PSTR("{s}%s{e}"), tpowstr);
+          WSContentSend_P(PSTR("<tr><td colspan=2>%s{e}"), tpowstr);
           // rewind, to ensure strchr
           mp--;
           mp = strchr(mp, '|');
@@ -2326,6 +2586,16 @@ void SML_Show(boolean json) {
           } else if (*cp == '(') {
             if (sml_globs.mp[mindex].type == 'o') {
               cp++;
+              strtol((char*)cp,(char**)&cp, 10);
+              cp++;
+              goto tststr;
+            } else {
+              mid = 0;
+            }
+          } else if (*cp == 's') {
+            // skip values
+            if (sml_globs.mp[mindex].type == 'o') {
+              cp += 2;
               strtol((char*)cp,(char**)&cp, 10);
               cp++;
               goto tststr;
@@ -2415,7 +2685,10 @@ void SML_Show(boolean json) {
             } else {
               // web ui export
               //snprintf_P(b_mqtt_data, sizeof(b_mqtt_data), "%s{s}%s %s: {m}%s %s{e}", b_mqtt_data,meter_desc[mindex].prefix,name,tpowstr,unit);
-             if (strcmp(name, "*"))  WSContentSend_PD(PSTR("{s}%s %s {m}%s %s{e}"), sml_globs.mp[mindex].prefix, name,tpowstr, unit);
+              if (strcmp(name, "*")) {
+                WSContentSend_P(PSTR("{s}%s %s{m}"), sml_globs.mp[mindex].prefix, name);  // Do not replace decimal separator in label
+                WSContentSend_PD(PSTR("%s %s{e}"), tpowstr, unit); // Replace decimal separator in value
+              }
             }
           }
         }
@@ -2584,7 +2857,7 @@ struct METER_DESC *mp = &meter_desc[mnum];
 			break;
  		case '2':
 			cp += 2;
-			mp->so_flags = strtol(cp, &cp, 16);
+			mp->so_flags.data = strtol(cp, &cp, 16);
 			break;
 		case '3':
 			cp += 2;
@@ -2618,6 +2891,10 @@ struct METER_DESC *mp = &meter_desc[mnum];
 			}
 			break;
 #endif // USE_SML_AUTHKEY
+    case 'A':
+      cp += 2;
+      mp->crypflags = strtol(cp, &cp, 10);
+      break;
 #endif // USE_SML_DECRYPT
 		case '6':
 			cp += 2;
@@ -2629,6 +2906,32 @@ struct METER_DESC *mp = &meter_desc[mnum];
 			mp->uart_index = strtol(cp, &cp, 10);
 #endif // ESP32
 			break;
+
+#ifdef USE_SML_CANBUS
+     case '8':
+      cp += 2;
+      for (uint8_t cnt = 0; cnt < SML_CAN_MASKS; cnt++) {
+				mp->can_masks[cnt] = sml_hex32(cp);
+        cp += 8;
+        if (*cp != ',') {
+          break;
+        }
+        cp++;
+			}
+      break;
+    case '9':
+      cp += 2;
+      for (uint8_t cnt = 0; cnt < SML_CAN_FILTERS; cnt++) {
+				mp->can_filters[cnt] = sml_hex32(cp);
+        cp += 8;
+        if (*cp != ',') {
+          break;
+        }
+        cp++;
+			}
+      break;
+
+#endif // USE_SML_CANBUS
 	}
 	return cp;
 }
@@ -2685,14 +2988,14 @@ void reset_sml_vars(uint16_t maxmeters) {
     mp->so_obis1 = 0;
     mp->so_obis2 = 0;
 #endif
-    mp->so_flags = 0;
+    mp->so_flags.data = 0;
     // addresses a bug in meter DWS74
 #ifdef DWS74_BUG
-    mp->so_flags |= SO_DWS74_BUG;
+    mp->so_flags.SO_DWS74_BUG = 1;
 #endif
 
 #ifdef SML_OBIS_LINE
-    mp->so_flags |= SO_OBIS_LINE;
+    mp->so_flags.SO_OBIS_LINE = 1;
 #endif
     if (mp->txmem) {
       free(mp->txmem);
@@ -2711,6 +3014,15 @@ void reset_sml_vars(uint16_t maxmeters) {
 #ifdef ESP32
     mp->uart_index = -1;
 #endif
+
+#ifdef USE_SML_CANBUS
+    for (uint8_t cnt = 0; cnt < SML_CAN_MASKS; cnt++) {
+			mp->can_masks[cnt] = 0;
+		}
+    for (uint8_t cnt = 0; cnt < SML_CAN_FILTERS; cnt++) {
+			mp->can_filters[cnt] = 0;
+    }
+#endif // USE_SML_CANBUS
 
 #ifdef USE_SML_DECRYPT
 		if (mp->use_crypt) {
@@ -2765,6 +3077,17 @@ void SML_Init(void) {
       sml_globs.sml_mf = 0;
     }
 #endif
+
+#ifdef USE_SML_CANBUS
+#ifdef ESP32
+    if (sml_globs.twai_installed) {
+      twai_stop();
+      twai_driver_uninstall();
+      sml_globs.twai_installed = false;
+    }
+#endif
+#endif // USE_SML_CANBUS
+
     reset_sml_vars(sml_globs.meters_used);
   }
 
@@ -2844,7 +3167,11 @@ void SML_Init(void) {
             str[cnt] = 0;
             lp++;
 #ifdef USE_SML_TCP
+#ifdef USE_SML_TCP_IP_STR
+            strcpy(mmp->ip_addr, str);
+#else
             mmp->ip_addr.fromString(str);
+#endif
 #endif
           } else {
             srcpin  = strtol(lp, &lp, 10);
@@ -2892,8 +3219,8 @@ dddef_exit:
           mmp->params = strtol(lp, &lp, 10);
           if (*lp != ',') goto next_line;
           lp++;
-          mmp->prefix[7] = 0;
-          for (uint32_t cnt = 0; cnt < 8; cnt++) {
+          mmp->prefix[SML_PREFIX_SIZE - 1] = 0;
+          for (uint32_t cnt = 0; cnt < SML_PREFIX_SIZE; cnt++) {
             if (*lp == SCRIPT_EOL || *lp == ',') {
               mmp->prefix[cnt] = 0;
               break;
@@ -3087,22 +3414,124 @@ next_line:
           InjektCounterValue(meters, RtcSettings.pulse_counter[cindex], 0.0);
           cindex++;
         }
+    } else if (mp->type == 'C') {
+#ifdef USE_SML_CANBUS
+
+#ifdef ESP8266
+      mp->mcp2515 = nullptr;
+      if ( PinUsed(GPIO_SPI_MISO) && PinUsed(GPIO_SPI_MOSI) && PinUsed(GPIO_SPI_CLK) ) {
+        mp->mcp2515 = new MCP2515(mp->srcpin);
+        if (MCP2515::ERROR_OK != mp->mcp2515->reset()) {
+          AddLog(LOG_LEVEL_DEBUG, PSTR("SML CAN: Failed to reset module"));
+          return;
+        }
+
+        if (MCP2515::ERROR_OK != mp->mcp2515->setBitrate((CAN_SPEED)(mp->params%100), (CAN_CLOCK)(mp->params/100))) {
+          AddLog(LOG_LEVEL_DEBUG, PSTR("SML CAN: Failed to set module bitrate"));
+          return;
+        }
+
+        //attachInterrupt(mp->trxpin, sml_canbus_irq, FALLING);
+
+        if (MCP2515::ERROR_OK != mp->mcp2515->setConfigMode()) {
+          AddLog(LOG_LEVEL_DEBUG, PSTR("SML CAN: Failed to set config mode"));
+        } else {
+          if (mp->can_filters[0]) mp->mcp2515->setFilter(MCP2515::RXF0, true, mp->can_filters[0]);
+          if (mp->can_filters[1]) mp->mcp2515->setFilter(MCP2515::RXF1, true, mp->can_filters[1]);
+          if (mp->can_filters[2]) mp->mcp2515->setFilter(MCP2515::RXF2, true, mp->can_filters[2]);
+          if (mp->can_filters[3]) mp->mcp2515->setFilter(MCP2515::RXF3, true, mp->can_filters[3]);
+          if (mp->can_filters[4]) mp->mcp2515->setFilter(MCP2515::RXF4, true, mp->can_filters[4]);
+          if (mp->can_filters[5]) mp->mcp2515->setFilter(MCP2515::RXF5, true, mp->can_filters[5]);
+
+          if (mp->can_masks[0]) mp->mcp2515->setFilterMask(MCP2515::MASK0, true, mp->can_masks[0]);
+          if (mp->can_masks[1]) mp->mcp2515->setFilterMask(MCP2515::MASK1, true, mp->can_masks[1]);
+
+         }
+
+        if (MCP2515::ERROR_OK != mp->mcp2515->setNormalMode()) {
+          AddLog(LOG_LEVEL_DEBUG, PSTR("SML CAN: Failed to set normal mode"));
+          return;
+        }
+
+        AddLog(LOG_LEVEL_INFO, PSTR("SML CAN: Initialized"));
+      } else {
+        AddLog(LOG_LEVEL_DEBUG, PSTR("SML CAN: SPI not configuered"));
+      }
+ #else
+      // Initialize configuration structures using macro initializers
+      twai_general_config_t g_config = TWAI_GENERAL_CONFIG_DEFAULT((gpio_num_t)mp->trxpin, (gpio_num_t)mp->srcpin, TWAI_MODE_NORMAL);
+      uint8_t qlen = mp->params/100;
+      if (qlen < 8) {
+        qlen = 8;
+      }
+      g_config.rx_queue_len = qlen;
+      twai_timing_config_t t_config;
+      switch (mp->params%100) {
+        case 0:
+          t_config = TWAI_TIMING_CONFIG_25KBITS();
+          break;
+        case 1:
+          t_config = TWAI_TIMING_CONFIG_50KBITS();
+          break;
+        case 2:
+          t_config = TWAI_TIMING_CONFIG_100KBITS();
+          break;
+        case 3:
+          t_config = TWAI_TIMING_CONFIG_125KBITS();
+          break;
+        case 4:
+          t_config = TWAI_TIMING_CONFIG_250KBITS();
+          break;
+        case 5:
+          t_config = TWAI_TIMING_CONFIG_500KBITS();
+          break;
+        case 6:
+          t_config = TWAI_TIMING_CONFIG_800KBITS();
+          break;
+        case 7:
+          t_config = TWAI_TIMING_CONFIG_1MBITS();
+          break;
+        default:
+          t_config = TWAI_TIMING_CONFIG_125KBITS();
+          break;
+      }
+    
+      twai_filter_config_t f_config = TWAI_FILTER_CONFIG_ACCEPT_ALL();
+
+      if (mp->can_filters[0]) {
+        f_config.acceptance_code = mp->can_filters[0] << 3; 
+        f_config.acceptance_mask = mp->can_masks[0] << 3; 
+        f_config.single_filter = true;
+      }
+      sml_globs.twai_installed = false;
+      // Install TWAI driver
+      if (twai_driver_install(&g_config, &t_config, &f_config) == ESP_OK) {
+        AddLog(LOG_LEVEL_DEBUG, PSTR("Can driver installed"));
+        // Start TWAI driver
+        if (twai_start() == ESP_OK) {
+          AddLog(LOG_LEVEL_DEBUG, PSTR("Can driver started"));
+          // Reconfigure alerts to detect frame receive, Bus-Off error and RX queue full states
+          uint32_t alerts_to_enable = TWAI_ALERT_RX_DATA | TWAI_ALERT_RX_QUEUE_FULL | TWAI_ALERT_TX_IDLE | TWAI_ALERT_TX_SUCCESS | TWAI_ALERT_TX_FAILED | TWAI_ALERT_ERR_PASS | TWAI_ALERT_BUS_ERROR;
+          if (twai_reconfigure_alerts(alerts_to_enable, NULL) == ESP_OK) {
+            AddLog(LOG_LEVEL_DEBUG, PSTR("CAN Alerts reconfigured"));
+            AddLog(LOG_LEVEL_INFO, PSTR("Can driver ready"));
+            sml_globs.twai_installed = true;
+          } else {
+            AddLog(LOG_LEVEL_DEBUG, PSTR("Failed to reconfigure CAN alerts"));
+          } 
+        } else {
+          AddLog(LOG_LEVEL_DEBUG, PSTR("Failed to start can driver"));
+        }
+      } else {
+        AddLog(LOG_LEVEL_DEBUG, PSTR("Failed to install can driver"));
+      }
+ #endif     
+#endif // USE_SML_CANBUS
     } else {
       // serial input, init
       if (mp->srcpin == TCP_MODE_FLG) {
 #ifdef USE_SML_TCP
-        // tcp mode
-#ifdef TCP_CLIENT_SECURE
-        mp->client = new WiFiClientSecure;
-        //client(new BearSSL::WiFiClientSecure_light(1024,1024)) {
-        mp->client->setInsecure();
-#else        
-        mp->client = new WiFiClient;
-#endif
-        int32_t err = mp->client->connect(mp->ip_addr, mp->params);
-        if (!err) {
-          AddLog(LOG_LEVEL_INFO, PSTR("SML: could not connect TCP to %s:%d"),mp->ip_addr.toString().c_str(), mp->params);
-        }
+        sml_tcp_init(mp);
 #endif
       } else {
         // serial mode
@@ -3142,7 +3571,7 @@ next_line:
 
 #endif  // ESP32
 
-        SerialConfig smode = SERIAL_8N1;
+        uint32_t smode = SERIAL_8N1;
 
         if (mp->sopt & 0xf0) {
           // new serial config
@@ -3178,14 +3607,16 @@ next_line:
           mp->meter_ss->flush();
         }
         if (mp->meter_ss->hardwareSerial()) {
-          Serial.begin(mp->params, smode);
+          Serial.begin(mp->params, (SerialConfig)smode);
           ClaimSerial();
-          //Serial.setRxBufferSize(512);
+          if (mp->so_flags.SO_TRX_INVERT) {
+            U0C0 = U0C0 | BIT(UCRXI) | BIT(UCTXI); // Inverse RX, TX
+          }
         }
 #endif  // ESP8266
 
 #ifdef ESP32
-        mp->meter_ss->begin(mp->params, smode, mp->srcpin, mp->trxpin);
+        mp->meter_ss->begin(mp->params, smode, mp->srcpin, mp->trxpin, mp->so_flags.SO_TRX_INVERT);
 #ifdef USE_ESP32_SW_SERIAL
 				mp->meter_ss->setRxBufferSize(mp->sibsiz);
 #endif
@@ -3216,7 +3647,7 @@ next_line:
     struct METER_DESC *mp = &meter_desc[meters];
     char type = mp->type;
 
-    if (!(mp->so_flags & SO_OBIS_LINE)) {
+    if (!(mp->so_flags.SO_OBIS_LINE)) {
       mp->shift_mode = (type != 'e' && type != 'k' && type != 'm' && type != 'M' && type != 'p' && type != 'R' && type != 'v');
     } else {
       mp->shift_mode = (type != 'o' && type != 'e' && type != 'k' && type != 'm' && type != 'M' && type != 'p' && type != 'R' && type != 'v');
@@ -3229,6 +3660,7 @@ next_line:
 #else
 			mp->hp = new Han_Parser(serial_dispatch, meters, mp->key, nullptr);
 #endif
+      mp->crypflags = 0;
 		}
 #endif
   }
@@ -3284,7 +3716,9 @@ uint32_t SML_Write(int32_t meter, char *hstr) {
   meter = abs(meter);
   if (meter < 1 || meter > sml_globs.meters_used) return 0;
   meter--;
-  if (!meter_desc[meter].meter_ss) return 0;
+  if (meter_desc[meter].type != 'C') {
+    if (!meter_desc[meter].meter_ss) return 0;
+  }
   if (flag > 0) {
     SML_Send_Seq(meter, hstr);
   } else {
@@ -3293,7 +3727,7 @@ uint32_t SML_Write(int32_t meter, char *hstr) {
     hstr++;
     // currently only 8 bits and ignore stopbits
     hstr++;
-    SerialConfig smode;
+    uint32_t smode;
     switch (*hstr) {
       case 'N':
         smode = SERIAL_8N1;
@@ -3307,9 +3741,9 @@ uint32_t SML_Write(int32_t meter, char *hstr) {
     }
 
 #ifdef ESP8266
-    Serial.begin(baud, smode);
+    Serial.begin(baud, (SerialConfig)smode);
 #else
-    meter_desc[meter].meter_ss->begin(baud, smode, sml_globs.mp[meter].srcpin, sml_globs.mp[meter].trxpin);
+    meter_desc[meter].meter_ss->begin(baud, smode, sml_globs.mp[meter].srcpin, sml_globs.mp[meter].trxpin, sml_globs.mp[meter].so_flags.SO_TRX_INVERT);
 #endif
   }
   return 1;
@@ -3364,6 +3798,19 @@ uint32_t sml_getv(uint32_t sel) {
   return sel;
 }
 
+uint32_t SML_Shift_Num(uint32_t meter, uint32_t shift) {
+  struct METER_DESC *mp = &sml_globs.mp[meter];
+  if (shift > mp->sbsiz) shift = mp->sbsiz;
+  for (uint16_t cnt = 0; cnt < shift; cnt++) {
+     for (uint16_t count = 0; count < mp->sbsiz - 1; count++) {
+      mp->sbuff[count] = mp->sbuff[count + 1];
+      SML_Decode(meter);
+    }
+  }
+  return shift;
+}
+
+
 double SML_GetVal(uint32_t index) {
   if (sml_globs.ready == false) return 0;
   if (index < 1 || index > sml_globs.maxvars) { index = 1;}
@@ -3380,7 +3827,9 @@ int32_t SML_Set_WStr(uint32_t meter, char *hstr) {
   if (sml_globs.ready == false) return 0;
   if (meter < 1 || meter > sml_globs.meters_used) return -1;
   meter--;
-  if (!meter_desc[meter].meter_ss) return -2;
+  if (meter_desc[meter].type != 'C') {
+    if (!meter_desc[meter].meter_ss) return -2;
+  }
   meter_desc[meter].script_str = hstr;
   return 0;
 }
@@ -3406,8 +3855,10 @@ void SML_Counter_Poll_1s(void) {
 	}
 }
 
-#define CNT_PULSE_TIMEOUT 5000
 
+#ifndef CNT_PULSE_TIMEOUT
+#define CNT_PULSE_TIMEOUT 5000
+#endif
 
 // fast counter polling
 void SML_Counter_Poll(void) {
@@ -3482,6 +3933,123 @@ uint32_t ctime = millis();
 }
 
 #ifdef USE_SCRIPT
+
+#ifdef USE_SML_CANBUS
+
+
+#ifdef ESP32
+#define POLLING_RATE_MS 100
+uint32_t sml_can_check_alerts() {
+
+  uint32_t alerts_triggered;
+  twai_read_alerts(&alerts_triggered, pdMS_TO_TICKS(POLLING_RATE_MS));
+  twai_status_info_t twaistatus;
+  twai_get_status_info(&twaistatus);
+
+  // Handle alerts
+  if (alerts_triggered & TWAI_ALERT_ERR_PASS) {
+    AddLog(LOG_LEVEL_DEBUG, PSTR("Alert: TWAI controller has become error passive."));
+  }
+  if (alerts_triggered & TWAI_ALERT_BUS_ERROR) {
+    AddLog(LOG_LEVEL_DEBUG, PSTR("Alert: A (Bit, Stuff, CRC, Form, ACK) error has occurred on the bus."));
+    AddLog(LOG_LEVEL_DEBUG, PSTR("Bus error count: %d"), twaistatus.bus_error_count);
+  }
+  if (alerts_triggered & TWAI_ALERT_RX_QUEUE_FULL) {
+    AddLog(LOG_LEVEL_DEBUG, PSTR("Alert: The RX queue is full causing a received frame to be lost."));
+    AddLog(LOG_LEVEL_DEBUG, PSTR("RX buffered: %d"), twaistatus.msgs_to_rx);
+    AddLog(LOG_LEVEL_DEBUG, PSTR("RX missed: %d"), twaistatus.rx_missed_count);
+    AddLog(LOG_LEVEL_DEBUG, PSTR("RX overrun %d"), twaistatus.rx_overrun_count);
+  }
+
+  if (alerts_triggered & TWAI_ALERT_TX_FAILED) {
+    AddLog(LOG_LEVEL_DEBUG, PSTR("Alert: The Transmission failed."));
+    AddLog(LOG_LEVEL_DEBUG, PSTR("TX buffered: %d"), twaistatus.msgs_to_tx);
+    AddLog(LOG_LEVEL_DEBUG, PSTR("TX error: %d"), twaistatus.tx_error_counter);
+    AddLog(LOG_LEVEL_DEBUG, PSTR("TX failed: %d"), twaistatus.tx_failed_count);
+  }
+  
+  if (alerts_triggered & TWAI_ALERT_TX_SUCCESS) {
+    AddLog(LOG_LEVEL_DEBUG, PSTR("Alert: The Transmission was successful."));
+    AddLog(LOG_LEVEL_DEBUG, PSTR("TX buffered: %d"), twaistatus.msgs_to_tx);
+  }
+
+  return alerts_triggered;
+}
+
+#endif // ESP32
+
+
+#define SML_CAN_MAX_FRAMES 8
+
+void SML_CANBUS_Read() {
+#ifdef ESP8266
+  struct can_frame canFrame;
+
+  for (uint32_t meter = 0; meter < sml_globs.meters_used; meter++) {
+    struct METER_DESC *mp = &sml_globs.mp[meter];
+    uint8_t nCounter = 0;
+
+    if (mp->type != 'C') continue;
+
+    if (mp->mcp2515 == nullptr) continue;
+
+    while (mp->mcp2515->checkReceive() && nCounter <= SML_CAN_MAX_FRAMES) {
+      if (mp->mcp2515->readMessage(&canFrame) == MCP2515::ERROR_OK) {
+          mp->sbuff[0] = canFrame.can_id >> 24;
+          mp->sbuff[1] = canFrame.can_id >> 16;
+          mp->sbuff[2] = canFrame.can_id >> 8;
+          mp->sbuff[3] = canFrame.can_id;
+          mp->sbuff[4] = canFrame.can_dlc;
+          for (int i = 0; i < canFrame.can_dlc; i++) {
+            mp->sbuff[5 + i] = canFrame.data[i];
+          }
+          SML_Decode(meter);
+          nCounter++;
+      } else {
+        if (mp->mcp2515->checkError()) {
+          uint8_t errFlags = mp->mcp2515->getErrorFlags();
+          mp->mcp2515->clearRXnOVRFlags();
+          AddLog(LOG_LEVEL_DEBUG, PSTR("SML CAN: Received error %d"), errFlags);
+          break;
+        }
+      }
+    }
+  }
+#else
+
+  for (uint32_t meter = 0; meter < sml_globs.meters_used; meter++) {
+    struct METER_DESC *mp = &sml_globs.mp[meter];
+    uint8_t nCounter = 0;
+
+    if (mp->type != 'C') continue;
+
+    if (sml_globs.twai_installed) {
+        uint32_t alerts_triggered = sml_can_check_alerts();
+
+        // Check if message is received
+        if (alerts_triggered & TWAI_ALERT_RX_DATA) {
+          // One or more messages received. Handle all.
+          twai_message_t message;
+          while (twai_receive(&message, 0) == ESP_OK) {
+            mp->sbuff[0] = message.identifier >> 24;
+            mp->sbuff[1] = message.identifier >> 16;
+            mp->sbuff[2] = message.identifier >> 8;
+            mp->sbuff[3] = message.identifier;
+            mp->sbuff[4] = message.data_length_code;
+            for (int i = 0; i < message.data_length_code; i++) {
+              mp->sbuff[5 + i] = message.data[i];
+            }
+            SML_Decode(meter);
+          }
+        }
+        
+    }
+  } 
+
+#endif
+}
+#endif // USE_SML_CANBUS
+
 char *SML_Get_Sequence(char *cp,uint32_t index) {
   if (!index) return cp;
   uint32_t cindex = 0;
@@ -3502,7 +4070,7 @@ void SML_Check_Send(void) {
   sml_globs.sml_100ms_cnt++;
   char *cp;
   for (uint32_t cnt = sml_globs.sml_desc_cnt; cnt < sml_globs.meters_used; cnt++) {
-    if (meter_desc[cnt].trxpin >= 0 && meter_desc[cnt].txmem) {
+    if (meter_desc[cnt].trxpin >= 0 && (meter_desc[cnt].txmem || meter_desc[cnt].script_str)) {
       //AddLog(LOG_LEVEL_INFO, PSTR("100 ms>> %d - %s - %d"),sml_globs.sml_desc_cnt,meter_desc[cnt].txmem,meter_desc[cnt].tsecs);
       if ((sml_globs.sml_100ms_cnt >= meter_desc[cnt].tsecs)) {
         sml_globs.sml_100ms_cnt = 0;
@@ -3569,6 +4137,18 @@ uint8_t sml_hexnibble(char chr) {
   return rVal;
 }
 
+uint32_t sml_hex32(char *cp) {
+  uint32_t iob = (sml_hexnibble(*cp++) << 4) | sml_hexnibble(*cp++);
+  uint32_t result = iob << 24;
+  iob = (sml_hexnibble(*cp++) << 4) | sml_hexnibble(*cp++);
+  result |= iob << 16;
+  iob = (sml_hexnibble(*cp++) << 4) | sml_hexnibble(*cp++);
+  result |= iob << 8;
+  iob = (sml_hexnibble(*cp++) << 4) | sml_hexnibble(*cp++);
+  result |= iob;
+  return result;
+}
+
 typedef struct {
   uint16_t T_ID;
   uint16_t P_ID;
@@ -3578,7 +4158,7 @@ typedef struct {
  } MODBUS_TCP_HEADER;
 
 uint16_t sml_swap(uint16_t in) {
-  return (in << 8) || in >> 8;
+  return (in << 8) | in >> 8;
 }
 
 // send modbus TCP frame with payload
@@ -3586,23 +4166,87 @@ uint16_t sml_swap(uint16_t in) {
 void sml_tcp_send(uint32_t meter, uint8_t *sbuff, uint16_t slen) {
 MODBUS_TCP_HEADER tcph;
 
-tcph.T_ID = sml_swap(0x1234);
-tcph.P_ID = 0;
-tcph.SIZE = sml_swap(6);
-tcph.U_ID = *sbuff;
+  //tcph.T_ID = sml_swap(0x1234);
+  tcph.T_ID = random(0xffff);
 
-sbuff++;
-for (uint8_t cnt = 0; cnt < slen - 3; cnt++) {
-  tcph.payload[cnt] = *sbuff++;
-}
+  tcph.P_ID = 0;
+  tcph.SIZE = sml_swap(6);
+  tcph.U_ID = *sbuff;
+
+  sbuff++;
+  for (uint8_t cnt = 0; cnt < slen - 3; cnt++) {
+    tcph.payload[cnt] = *sbuff++;
+  }
 
 #ifdef USE_SML_TCP
- // AddLog(LOG_LEVEL_INFO, PSTR("slen >> %d "),slen);
-  if (meter_desc[meter].client->connected()) {
-    meter_desc[meter].client->write((uint8_t*)&tcph, 7 + slen - 3);
+  // AddLog(LOG_LEVEL_INFO, PSTR("slen >> %d "),slen);
+  if (meter_desc[meter].client) {
+    if (meter_desc[meter].client->connected()) {
+      meter_desc[meter].client->write((uint8_t*)&tcph, 7 + slen - 3);
+    }
   }
 #endif
 }
+
+#ifdef USE_SML_TCP
+int32_t sml_tcp_init(struct METER_DESC *mp) {  
+  if (!TasmotaGlobal.global_state.wifi_down) {
+    if (!mp->client) {
+      // tcp mode
+#ifdef USE_SML_TCP_SECURE
+      mp->client = new WiFiClientSecure;
+      //client(new BearSSL::WiFiClientSecure_light(1024,1024)) {
+      mp->client->setInsecure();
+#else        
+      mp->client = new WiFiClient;
+#endif // USE_SML_TCP_SECURE
+    }
+    int32_t err = mp->client->connect(mp->ip_addr, mp->params);
+    char ipa[32];
+#ifdef USE_SML_TCP_IP_STR
+    strcpy(ipa, mp->ip_addr);
+#else
+    strcpy(ipa, mp->ip_addr.toString().c_str());
+#endif
+    if (!err) {
+      AddLog(LOG_LEVEL_INFO, PSTR("SML: could not connect TCP to %s:%d"),ipa, mp->params);
+    } else {
+      AddLog(LOG_LEVEL_INFO, PSTR("SML: connected TCP to %s:%d"),ipa, mp->params);
+    }
+  } else {
+    AddLog(LOG_LEVEL_INFO, PSTR("SML: could not connect TCP since wifi is down"));
+    mp->client = nullptr;
+    return -1;
+  }
+  return 0;
+}
+
+#ifndef TCP_TIMEOUT
+#define TCP_TIMEOUT 30
+#endif
+
+void sml_tcp_check(void) {
+  sml_globs.to_cnt++;
+  if (sml_globs.to_cnt > TCP_TIMEOUT) {
+    sml_globs.to_cnt = 0;
+    for (uint32_t meter = 0; meter < sml_globs.meters_used; meter++) {
+      struct METER_DESC *mp = &sml_globs.mp[meter];
+		  if (mp->srcpin == TCP_MODE_FLG) {
+			  if (!mp->client) {
+          sml_tcp_init(mp);
+        } else {
+          if (!mp->client->connected()) {
+            sml_tcp_init(mp);
+          }
+        }
+		  }
+	  }
+  }
+}
+
+
+#endif // USE_SML_TCP
+
 
 // send sequence every N Seconds
 void SML_Send_Seq(uint32_t meter, char *seq) {
@@ -3614,6 +4258,8 @@ void SML_Send_Seq(uint32_t meter, char *seq) {
     rflg = 1;
     cp++;
   }
+
+  struct METER_DESC *mp = &meter_desc[meter];
   while (*cp) {
     if (!*cp || !*(cp+1)) break;
     if (*cp == ',') break;
@@ -3623,8 +4269,8 @@ void SML_Send_Seq(uint32_t meter, char *seq) {
     slen++;
     if (slen >= sizeof(sbuff)-6) break; // leave space for checksum
   }
-  if (meter_desc[meter].type == 'm' || meter_desc[meter].type == 'M' || meter_desc[meter].type == 'k') {
-    if (meter_desc[meter].type == 'k') {
+  if (mp->type == 'm' || mp->type == 'M' || mp->type == 'k') {
+    if (mp->type == 'k') {
       // kamstrup, append crc, cr
       *ucp++ = 0;
       *ucp++ = 0;
@@ -3667,12 +4313,12 @@ void SML_Send_Seq(uint32_t meter, char *seq) {
     }
 
   }
-  if (meter_desc[meter].type == 'o') {
+  if (mp->type == 'o') {
     for (uint32_t cnt = 0; cnt < slen; cnt++) {
       sbuff[cnt] |= (CalcEvenParity(sbuff[cnt]) << 7);
     }
   }
-  if (meter_desc[meter].type == 'p') {
+  if (mp->type == 'p') {
     *ucp++ = 0xc0;
     *ucp++ = 0xa8;
     *ucp++ = 1;
@@ -3682,18 +4328,59 @@ void SML_Send_Seq(uint32_t meter, char *seq) {
     slen += 6;
   }
 
-  if (meter_desc[meter].srcpin == TCP_MODE_FLG) {
+  if (mp->srcpin == TCP_MODE_FLG) {
     sml_tcp_send(meter, sbuff, slen);
   } else {
-    if (meter_desc[meter].trx_en.trxen) {
-      digitalWrite(meter_desc[meter].trx_en.trxenpin, meter_desc[meter].trx_en.trxenpol ^ 1);
-    }
-    meter_desc[meter].meter_ss->flush();
-    meter_desc[meter].meter_ss->write(sbuff, slen);
-    if (meter_desc[meter].trx_en.trxen) {
-      // must wait for all data sent
-      meter_desc[meter].meter_ss->flush();
-      digitalWrite(meter_desc[meter].trx_en.trxenpin, meter_desc[meter].trx_en.trxenpol);
+    if (mp->type == 'C') {
+#ifdef USE_SML_CANBUS
+#ifdef ESP8266
+      if (mp->mcp2515 != nullptr) {
+        struct can_frame canMsg;
+        canMsg.can_id = (uint32_t) (sbuff[0] << 24 | sbuff[1] << 16 | sbuff[2] << 8 | sbuff[3]);
+        canMsg.can_dlc = sbuff[4];
+        for (uint8_t i = 0; i < canMsg.can_dlc; i++) {
+          canMsg.data[i] = sbuff[i + 5];
+        }
+        mp->mcp2515->sendMessage(&canMsg);
+      }
+#else
+      if (sml_globs.twai_installed) {
+        twai_message_t message;
+        message.identifier = (uint32_t) (sbuff[0] << 24 | sbuff[1] << 16 | sbuff[2] << 8 | sbuff[3]);
+        message.data_length_code = sbuff[4];
+        for (uint8_t i = 0; i < message.data_length_code; i++) {
+          message.data[i] = sbuff[i + 5];
+        }
+
+        message.flags = 0;
+        if (message.identifier & 0x80000000) {
+          message.extd = 1;
+          message.identifier &= 0x7fffffff;
+        }
+
+        twai_clear_receive_queue();
+
+        // Queue message for transmission
+        if (twai_transmit(&message, pdMS_TO_TICKS(100)) == ESP_OK) {
+          AddLog(LOG_LEVEL_DEBUG, PSTR("Can message queued for transmission"));
+        } else {
+          AddLog(LOG_LEVEL_DEBUG, PSTR("Failed to queue can message for transmission"));
+        }
+      }
+#endif
+#endif // USE_SML_CANBUS
+    } else { 
+      if (mp->trx_en.trxen) {
+        digitalWrite(meter_desc[meter].trx_en.trxenpin, meter_desc[meter].trx_en.trxenpol ^ 1);
+      }
+      mp->meter_ss->flush();
+      mp->meter_ss->write(sbuff, slen);
+      if (mp->trx_en.trxen) {
+        // must wait for all data sent
+        mp->meter_ss->flush();
+        digitalWrite(mp->trx_en.trxenpin, mp->trx_en.trxenpol);
+      }
+
     }
   }
 
@@ -3702,14 +4389,14 @@ void SML_Send_Seq(uint32_t meter, char *seq) {
     Hexdump(sbuff, slen);
 #else
     uint8_t type = sml_globs.mp[(sml_globs.dump2log&7) - 1].type;
-    if (type == 'm' || type == 'M' || type == 'k') {
+    if (type == 'm' || type == 'M' || type == 'k' || type == 'C') {
       Hexdump(sbuff, slen);
     }
 #endif
   }
 
 #ifdef MODBUS_DEBUG
-  uint8_t type = meter_desc[meter].type;
+  uint8_t type = mp->type;
   if (!sml_globs.dump2log && (type == 'm' || type == 'M' || type == 'k')) {
     AddLog(LOG_LEVEL_INFO, PSTR("transmit index >> %d"),sml_globs.mp[meter].index);
     Hexdump(sbuff, slen);
@@ -3898,12 +4585,17 @@ bool Xsns53(uint32_t function) {
         SML_Init();
         break;
       case FUNC_LOOP:
-        if (sml_globs.ready) {
-          SML_Counter_Poll();
-          if (sml_globs.dump2log) {
-            dump2log();
-          } else {
-            SML_Poll();
+        if (bitRead(Settings->rule_enabled, 0)) {
+          if (sml_globs.ready) {
+            SML_Counter_Poll();
+            if (sml_globs.dump2log) {
+              dump2log();
+            } else {
+              SML_Poll();
+#ifdef USE_SML_CANBUS
+              SML_CANBUS_Read();
+#endif// USE_SML_CANBUS
+            }
           }
         }
         break;
@@ -3918,6 +4610,9 @@ bool Xsns53(uint32_t function) {
 					if (bitRead(Settings->rule_enabled, 0)) {
 						if (sml_globs.ready) {
 							SML_Counter_Poll_1s();
+#ifdef USE_SML_TCP
+              sml_tcp_check();
+#endif
 						}
 					}
 					break;

@@ -74,6 +74,13 @@ class Matter_Expirable
   end
   
   #############################################################
+  # before_remove
+  #
+  # called right before the element is removed
+  def before_remove()
+  end
+
+  #############################################################
   # set absolute time for expiration
   def set_no_expiration()
     self._expiration = nil
@@ -89,7 +96,7 @@ class Matter_Expirable
   # set relative time in the future for expiration (in seconds)
   def set_expire_in_seconds(s, now)
     if s == nil  return end
-    if now == nil     now = tasmota.rtc()['utc']    end
+    if now == nil     now = tasmota.rtc_utc()    end
     self.set_expire_time(now + s)
   end
 
@@ -97,7 +104,7 @@ class Matter_Expirable
   # set relative time in the future for expiration (in seconds)
   # returns `true` if expiration date has been reached
   def has_expired(now)
-    if now == nil     now = tasmota.rtc()['utc']    end
+    if now == nil     now = tasmota.rtc_utc()    end
     if self._expiration != nil
       return now >= self._expiration
     end
@@ -131,6 +138,15 @@ class Matter_Expirable_list : list
     return super(self).setitem(i, o)
   end
 
+  #############################################################
+  # remove - override
+  #
+  def remove(i)
+    if i != nil
+      if i >= 0 && i < size(self)   self[i].before_remove()   end
+      return super(self).remove(i)
+    end
+  end
 
   #############################################################
   # remove_expired

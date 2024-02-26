@@ -96,7 +96,7 @@ extern "C" {
     TwoWire & myWire = getWire(vm);
     if (top == 2 && be_isint(vm, 2)) {  // only 1 argument of type string accepted
       int32_t address = be_toint(vm, 2);
-      myWire.beginTransmission(address);
+      myWire.beginTransmission((int)address);
       be_return(vm); // Return
     }
     be_raise(vm, kTypeError, nullptr);
@@ -164,7 +164,7 @@ extern "C" {
         myWire.write(value);
       } else if (be_isstring(vm, 2)) {
         const char * s = be_tostring(vm, 1);
-        myWire.write(s);
+        myWire.write((uint8_t*) s, strlen(s));
       } else if ((buf = be_tobytes(vm, 2, &len)) != nullptr) {
         myWire.write((uint8_t*) buf, len);
       } else {

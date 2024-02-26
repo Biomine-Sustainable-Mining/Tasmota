@@ -51,12 +51,15 @@
 #define D_DECIMAL_SEPARATOR ","
 
 // Common
+#define D_ABSOLUTE_HUMIDITY "Abs Humidity"
 #define D_ADMIN "Admin"
 #define D_AIR_QUALITY "Качество на въздуха"
 #define D_AP "Точка за достъп"       // Access Point
 #define D_AS "като"
 #define D_AUTO "АВТОМАТИЧНО"
+#define D_BATTERY "Battery"
 #define D_BATT "Бат."                // Short for Battery
+#define D_BATTERY_CHARGE "Charge"   // Battery charge in %
 #define D_BLINK "Мигане вкл."
 #define D_BLINKOFF "Мигане изкл."
 #define D_BOOT_COUNT "Брой стартирания"
@@ -103,6 +106,7 @@
 #define D_FALLBACK_TOPIC "Резервна тема"
 #define D_FALSE "Невярно"
 #define D_FILE "Файл"
+#define D_FILE_SYSTEM_SIZE "File System Size"
 #define D_FLOW_RATE "Дебит"
 #define D_FRAGMENTATION "фраг."      // Lower case abbreviated version of fragmentation used in "memory fragmentation"
 #define D_FRAME_RATE "Кадъра в секунда"
@@ -115,6 +119,7 @@
 #define D_GROUP "Група"
 #define D_HOST "Хост"
 #define D_HALL_EFFECT "Ефект на Хол"
+#define D_HEATINDEX "Heat index"
 #define D_HOSTNAME "Име на хоста"
 #define D_HUMIDITY "Влажност"
 #define D_ILLUMINANCE "Осветеност"
@@ -133,6 +138,7 @@
 #define D_MULTI_PRESS "неколкократно натискане"
 #define D_NOISE "Шум"
 #define D_NONE "Няма"
+#define D_NOX "NOx"
 #define D_O2 "Кислород"
 #define D_OFF "Изкл."
 #define D_OFFLINE "Извън мрежа"
@@ -148,6 +154,7 @@
 #define D_POWER_FACTOR "Фактор на мощността"
 #define D_POWERUSAGE "Мощност"
 #define D_POWERUSAGE_ACTIVE "Активна мощност"
+#define D_POWERUSAGE_ACTIVE_TOTAL "Active Power Total"
 #define D_POWERUSAGE_APPARENT "Пълна мощност"
 #define D_POWERUSAGE_REACTIVE "Реактивна мощност"
 #define D_PRESSURE "Налягане"
@@ -161,7 +168,6 @@
 #define D_RESTART "Рестартиране"
 #define D_RESTARTING "Рестартиране"
 #define D_RESTART_REASON "Причина за рестарт"
-#define D_RESTORE "възстановяване"
 #define D_RETAINED "запазено"
 #define D_RULE "Правило"
 #define D_SAVE "Запазване"
@@ -184,7 +190,9 @@
 #define D_TRANSMIT "Предаване"
 #define D_TRUE "Вярно"
 #define D_TVOC "TVOC"
-#define D_UPGRADE "Обновяване"
+#define D_TWILIGHT_ASTRONOMICAL "Astronomical"
+#define D_TWILIGHT_CIVIL "Civil"
+#define D_TWILIGHT_NAUTICAL "Nautical"
 #define D_UPLOAD "Качването е"
 #define D_UPTIME "Време на работа"
 #define D_USED "използвано"
@@ -201,6 +209,7 @@
 #define D_UV_LEVEL "Ниво на UV"
 #define D_UV_POWER "Сила на UV"
 #define D_VERSION "Издание"
+#define D_VOC "VOC"
 #define D_VOLTAGE "Напрежение"
 #define D_VOLUME "Обем"
 #define D_WEIGHT "Тегло"
@@ -268,6 +277,7 @@
 #define D_INFORMATION "Информация"
 #define D_FIRMWARE_UPGRADE "Обновяване на софтуера"
 #define D_MANAGEMENT "Терминали"
+#define D_GPIO_VIEWER "GPIO Viewer"
 #define D_CONSOLE "Терминал"
 #define D_CONFIRM_RESTART "Потвърдете рестартиране"
 
@@ -281,6 +291,7 @@
 #define D_RESET_CONFIGURATION "Нулиране на настройки"
 #define D_BACKUP_CONFIGURATION "Резервно копие на настройки"
 #define D_RESTORE_CONFIGURATION "Възстановяване на настройки"
+#define D_START_RESTORE "Start restore"
 #define D_MAIN_MENU "Начало"
 
 #define D_MODULE_PARAMETERS "Параметри на модула"
@@ -298,6 +309,7 @@
 #define D_REFRESH_TO_SCAN_AGAIN "Обновяване за повторно сканиране"
 #define D_DUPLICATE_ACCESSPOINT "Дублирана точка за достъп"
 #define D_SKIPPING_LOW_QUALITY "Пропускане поради лошо качество"
+#define D_MODE "Mode"
 #define D_RSSI "RSSI"
 #define D_WEP "WEP"
 #define D_WPA_PSK "WPA PSK"
@@ -537,6 +549,23 @@
 #define D_DEVICE_INPUT "Вход"
 #define D_DEVICE_OUTPUT "Изход"
 
+// xdrv_39_thermostat.ino, xdrv_85_esp32_ble_eq3_trv.ino
+#define D_THERMOSTAT                  "Thermostat"
+#define D_THERMOSTAT_SET_POINT        "Set Point Temperature"
+#define D_THERMOSTAT_SENSOR           "Current Temperature"
+#define D_THERMOSTAT_GRADIENT         "Gradient Temperature"
+#define D_THERMOSTAT_DUTY_CYCLE       "Duty cycle"
+#define D_THERMOSTAT_VALVE_POSITION   "Valve Position"
+#define D_THERMOSTAT_CYCLE_TIME       "Cycle time"
+#define D_THERMOSTAT_PI_AUTOTUNE      "PI Auto tuning"
+#define D_THERMOSTAT_CONTROL_METHOD   "Control method"
+#define D_THERMOSTAT_RAMP_UP          "Ramp up"
+#define D_THERMOSTAT_PI               "PI"
+#define D_THERMOSTAT_AUTOTUNE         "Autotune"
+#define D_THERMOSTAT_RAMP_UP_HYBRID   "Ramp up (Hybrid)"
+#define D_THERMOSTAT_PI_HYBRID        "PI (Hybrid)"
+#define D_THERMOSTAT_AUTOTUNE_HYBRID  "Autotune (Hybrid)"
+
 // xsns_05_ds18b20.ino
 #define D_SENSOR_BUSY "Датчикът DS18x20 е зает"
 #define D_SENSOR_CRC_ERROR "Датчик DS18x20 - грешка CRC"
@@ -647,6 +676,8 @@
 #define D_SENSOR_I2S_BCLK_IN   "I2S WS IN"
 #define D_SENSOR_I2S_DIN       "I2S DIN"
 #define D_SENSOR_I2S_DOUT      "I2S DOUT"
+#define D_SENSOR_I2S_DAC       "I2S DAC"
+#define D_SENSOR_HDMI_CEC      "HDMI CEC"
 #define D_SENSOR_WS2812        "WS2812"
 #define D_SENSOR_DFR562        "MP3 Player"
 #define D_SENSOR_DFR562_BUSY   "MP3 Busy"
@@ -663,6 +694,7 @@
 #define D_SENSOR_IRRECV        "IRrecv"
 #define D_SENSOR_MHZ_RX        "MHZ Rx"
 #define D_SENSOR_MHZ_TX        "MHZ Tx"
+#define D_SENSOR_HC8_RX        "HC8 Rx"
 #define D_SENSOR_PZEM004_RX    "PZEM004 Rx"
 #define D_SENSOR_PZEM016_RX    "PZEM016 Rx"
 #define D_SENSOR_PZEM017_RX    "PZEM017 Rx"
@@ -745,6 +777,10 @@
 #define D_SENSOR_MAX31855_CLK  "MX31855 CLK"
 #define D_SENSOR_MAX31855_DO   "MX31855 DO"
 #define D_SENSOR_MAX31865_CS   "MX31865 CS"
+#define D_GPIO_LORA_CS         "LoRa CS"
+#define D_GPIO_LORA_RST        "LoRa Rst"
+#define D_GPIO_LORA_BUSY       "LoRa Busy"
+#define D_GPIO_LORA_DI         "LoRa DI"    // Suffix "0","1","2"
 #define D_SENSOR_NRG_SEL       "HLWBL SEL"  // Suffix "i"
 #define D_SENSOR_NRG_CF1       "HLWBL CF1"
 #define D_SENSOR_HLW_CF        "HLW8012 CF"
@@ -799,6 +835,8 @@
 #define D_SENSOR_OUTPUT_LO     "Output Lo"
 #define D_SENSOR_AS608_TX      "AS608 Tx"
 #define D_SENSOR_AS608_RX      "AS608 Rx"
+#define D_SENSOR_GM861_TX      "GM861 Tx"
+#define D_SENSOR_GM861_RX      "GM861 Rx"
 #define D_SENSOR_DDS2382_TX    "DDS238-2 Tx"
 #define D_SENSOR_DDS2382_RX    "DDS238-2 Rx"
 #define D_SENSOR_DDSU666_TX    "DDSU666 Tx"
@@ -914,6 +952,7 @@
 #define D_GPIO_DINGTIAN_SDI    "Dingtian SDI"
 #define D_GPIO_DINGTIAN_Q7     "Dingtian Q7"
 #define D_GPIO_DINGTIAN_PL     "Dingtian PL"
+#define D_GPIO_DINGTIAN_OE     "Dingtian OE"
 #define D_GPIO_DINGTIAN_RCK    "Dingtian RCK"
 #define D_SENSOR_CM11_TX       "CM110x TX"
 #define D_SENSOR_CM11_RX       "CM110x RX"
@@ -925,6 +964,8 @@
 #define D_SENSOR_BIOPDU_PZEM0XX_TX "BioPDU PZEM0XX Tx"
 #define D_SENSOR_BIOPDU_PZEM016_RX "BioPDU PZEM016 Rx"
 #define D_SENSOR_BIOPDU_BIT    "BioPDU Bit"
+#define D_SENSOR_LOX_O2_RX     "LoxO2 RX"
+#define D_GPIO_MAGIC_SWITCH "MagicSwitch"
 
 // Units
 #define D_UNIT_AMPERE "А"
@@ -938,6 +979,7 @@
 #define D_UNIT_GALLONS "гал"
 #define D_UNIT_GALLONS_PER_MIN "гал/мин"
 #define D_UNIT_KILOGRAM "кг"
+#define D_UNIT_GRAM_PER_CUBIC_METER "g/m³"
 #define D_UNIT_INCH_MERCURY "inHg"
 #define D_UNIT_INCREMENTS "инч"
 #define D_UNIT_KELVIN "K"
@@ -1183,5 +1225,13 @@
 #define D_NEOPOOL_PH_HIGH                 "твърде високо"      // ph Alarms
 #define D_NEOPOOL_PH_LOW                  "твърде ниско"
 #define D_NEOPOOL_PUMP_TIME_EXCEEDED      "превишено време за помпане"
+
+// xsns_106_gdk101.ino
+#define D_AVG_RAD_DOSE                    "средна доза радиация"
+#define D_UNIT_US_H                       "µSv/h"
+
+// ixrv92_pipsolar.ino
+#define D_SENSOR_PIPSOLAR_TX             "Pipsolar TX"
+#define D_SENSOR_PIPSOLAR_RX             "Pipsolar RX"
 
 #endif  // _LANGUAGE_BG_BG_H_

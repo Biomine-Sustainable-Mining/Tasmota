@@ -51,12 +51,15 @@
 #define D_DECIMAL_SEPARATOR ","
 
 // Common
+#define D_ABSOLUTE_HUMIDITY "Abs Humidity"
 #define D_ADMIN "Admin"
 #define D_AIR_QUALITY "Kvalita vzduchu"
 #define D_AP "AP"                    // Access Point
 #define D_AS "ako"
 #define D_AUTO "AUTO"
+#define D_BATTERY "Battery"
 #define D_BATT "Batt"                // Short for Battery
+#define D_BATTERY_CHARGE "Charge"   // Battery charge in %
 #define D_BLINK "Blikanie"
 #define D_BLINKOFF "BlikanieVyp"
 #define D_BOOT_COUNT "Počítadlo spustení"
@@ -79,6 +82,7 @@
 #define D_CURRENT "Prúd"          // As in Voltage and Current
 #define D_CURRENT_NEUTRAL "Current Neutral"
 #define D_DATA "Dáta"
+#define D_FILE_SYSTEM_SIZE "File System Size"
 #define D_FLOW_RATE "Flow rate"
 #define D_DARKLIGHT "Tmavý"
 #define D_DEBUG "Debug"
@@ -115,6 +119,7 @@
 #define D_GROUP "Skupina"
 #define D_HOST "Server"
 #define D_HALL_EFFECT "Hall Effect"
+#define D_HEATINDEX "Heat index"
 #define D_HOSTNAME "Názov servera"
 #define D_HUMIDITY "Vlhkosť"
 #define D_ILLUMINANCE "Osvetlenie"
@@ -133,6 +138,7 @@
 #define D_MULTI_PRESS "multi-stlačenie"
 #define D_NOISE "Hluk"
 #define D_NONE "Žiadny"
+#define D_NOX "NOx"
 #define D_O2 "Oxygen"
 #define D_OFF "Vyp."
 #define D_OFFLINE "Neaktívny"
@@ -148,6 +154,7 @@
 #define D_POWER_FACTOR "Účinník"
 #define D_POWERUSAGE "Príkon"
 #define D_POWERUSAGE_ACTIVE "Činný príkon"
+#define D_POWERUSAGE_ACTIVE_TOTAL "Active Power Total"
 #define D_POWERUSAGE_APPARENT "Zdanlivý príkon"
 #define D_POWERUSAGE_REACTIVE "Jalový príkon"
 #define D_PRESSURE "Tlak"
@@ -161,7 +168,6 @@
 #define D_RESTART "Reštart"
 #define D_RESTARTING "Reštartuje sa"
 #define D_RESTART_REASON "Príčina reštartu"
-#define D_RESTORE "Obnoviť"
 #define D_RETAINED "Zachované"
 #define D_RULE "Pravidlo"
 #define D_SAVE "Ulož"
@@ -184,7 +190,9 @@
 #define D_TRANSMIT "Odošli"
 #define D_TRUE "Pravda"
 #define D_TVOC "TVOC"
-#define D_UPGRADE "aktualizáciu"
+#define D_TWILIGHT_ASTRONOMICAL "Astronomical"
+#define D_TWILIGHT_CIVIL "Civil"
+#define D_TWILIGHT_NAUTICAL "Nautical"
 #define D_UPLOAD "Nahrávanie..."
 #define D_UPTIME "Uptime"
 #define D_USED "used"
@@ -201,6 +209,7 @@
 #define D_UV_LEVEL "úroveň UV"
 #define D_UV_POWER "UV Power"
 #define D_VERSION "Verzia"
+#define D_VOC "VOC"
 #define D_VOLTAGE "Napätie"
 #define D_VOLUME "Volume"
 #define D_WEIGHT "Hmotnosť"
@@ -267,7 +276,8 @@
 #define D_CONFIGURATION "Nastavenia"
 #define D_INFORMATION "Informácie"
 #define D_FIRMWARE_UPGRADE "Aktualizácia firmware"
-#define D_MANAGEMENT "Consoles"
+#define D_MANAGEMENT "Tools"
+#define D_GPIO_VIEWER "GPIO Viewer"
 #define D_CONSOLE "Konzola"
 #define D_CONFIRM_RESTART "Potvrdenie reštartu"
 
@@ -281,6 +291,7 @@
 #define D_RESET_CONFIGURATION "Reset nastavení"
 #define D_BACKUP_CONFIGURATION "Záloha nastavení"
 #define D_RESTORE_CONFIGURATION "Obnovenie nastavení"
+#define D_START_RESTORE "Start restore"
 #define D_MAIN_MENU "Hlavné menu"
 
 #define D_MODULE_PARAMETERS "Nastavenia modulu"
@@ -298,6 +309,7 @@
 #define D_REFRESH_TO_SCAN_AGAIN "Zopakovať sken"
 #define D_DUPLICATE_ACCESSPOINT "Kópia AP"
 #define D_SKIPPING_LOW_QUALITY "Preskočenie z dôvodu kvality signálu"
+#define D_MODE "Mode"
 #define D_RSSI "RSSI"
 #define D_WEP "WEP"
 #define D_WPA_PSK "WPA PSK"
@@ -537,6 +549,23 @@
 #define D_DEVICE_INPUT "Input"
 #define D_DEVICE_OUTPUT "Output"
 
+// xdrv_39_thermostat.ino, xdrv_85_esp32_ble_eq3_trv.ino
+#define D_THERMOSTAT                  "Thermostat"
+#define D_THERMOSTAT_SET_POINT        "Set Point Temperature"
+#define D_THERMOSTAT_SENSOR           "Current Temperature"
+#define D_THERMOSTAT_GRADIENT         "Gradient Temperature"
+#define D_THERMOSTAT_DUTY_CYCLE       "Duty cycle"
+#define D_THERMOSTAT_VALVE_POSITION   "Valve Position"
+#define D_THERMOSTAT_CYCLE_TIME       "Cycle time"
+#define D_THERMOSTAT_PI_AUTOTUNE      "PI Auto tuning"
+#define D_THERMOSTAT_CONTROL_METHOD   "Control method"
+#define D_THERMOSTAT_RAMP_UP          "Ramp up"
+#define D_THERMOSTAT_PI               "PI"
+#define D_THERMOSTAT_AUTOTUNE         "Autotune"
+#define D_THERMOSTAT_RAMP_UP_HYBRID   "Ramp up (Hybrid)"
+#define D_THERMOSTAT_PI_HYBRID        "PI (Hybrid)"
+#define D_THERMOSTAT_AUTOTUNE_HYBRID  "Autotune (Hybrid)"
+
 // xsns_05_ds18b20.ino
 #define D_SENSOR_BUSY "Sensor DS18x20 obsadený"
 #define D_SENSOR_CRC_ERROR "Sensor DS18x20 chyba CRC"
@@ -647,6 +676,8 @@
 #define D_SENSOR_I2S_BCLK_IN   "I2S WS IN"
 #define D_SENSOR_I2S_DIN       "I2S DIN"
 #define D_SENSOR_I2S_DOUT      "I2S DOUT"
+#define D_SENSOR_I2S_DAC       "I2S DAC"
+#define D_SENSOR_HDMI_CEC      "HDMI CEC"
 #define D_SENSOR_WS2812        "WS2812"
 #define D_SENSOR_DFR562        "MP3 Player"
 #define D_SENSOR_DFR562_BUSY   "MP3 Busy"
@@ -663,6 +694,7 @@
 #define D_SENSOR_IRRECV        "IRrecv"
 #define D_SENSOR_MHZ_RX        "MHZ Rx"
 #define D_SENSOR_MHZ_TX        "MHZ Tx"
+#define D_SENSOR_HC8_RX        "HC8 Rx"
 #define D_SENSOR_PZEM004_RX    "PZEM004 Rx"
 #define D_SENSOR_PZEM016_RX    "PZEM016 Rx"
 #define D_SENSOR_PZEM017_RX    "PZEM017 Rx"
@@ -745,6 +777,10 @@
 #define D_SENSOR_MAX31855_CLK  "MX31855 CLK"
 #define D_SENSOR_MAX31855_DO   "MX31855 DO"
 #define D_SENSOR_MAX31865_CS   "MX31865 CS"
+#define D_GPIO_LORA_CS         "LoRa CS"
+#define D_GPIO_LORA_RST        "LoRa Rst"
+#define D_GPIO_LORA_BUSY       "LoRa Busy"
+#define D_GPIO_LORA_DI         "LoRa DI"    // Suffix "0","1","2"
 #define D_SENSOR_NRG_SEL       "HLWBL SEL"  // Suffix "i"
 #define D_SENSOR_NRG_CF1       "HLWBL CF1"
 #define D_SENSOR_HLW_CF        "HLW8012 CF"
@@ -799,6 +835,8 @@
 #define D_SENSOR_OUTPUT_LO     "Output Lo"
 #define D_SENSOR_AS608_TX      "AS608 Tx"
 #define D_SENSOR_AS608_RX      "AS608 Rx"
+#define D_SENSOR_GM861_TX      "GM861 Tx"
+#define D_SENSOR_GM861_RX      "GM861 Rx"
 #define D_SENSOR_DDS2382_TX    "DDS238-2 Tx"
 #define D_SENSOR_DDS2382_RX    "DDS238-2 Rx"
 #define D_SENSOR_DDSU666_TX    "DDSU666 Tx"
@@ -914,6 +952,7 @@
 #define D_GPIO_DINGTIAN_SDI    "Dingtian SDI"
 #define D_GPIO_DINGTIAN_Q7     "Dingtian Q7"
 #define D_GPIO_DINGTIAN_PL     "Dingtian PL"
+#define D_GPIO_DINGTIAN_OE     "Dingtian OE"
 #define D_GPIO_DINGTIAN_RCK    "Dingtian RCK"
 #define D_SENSOR_CM11_TX       "CM110x TX"
 #define D_SENSOR_CM11_RX       "CM110x RX"
@@ -925,6 +964,8 @@
 #define D_SENSOR_BIOPDU_PZEM0XX_TX "BioPDU PZEM0XX Tx"
 #define D_SENSOR_BIOPDU_PZEM016_RX "BioPDU PZEM016 Rx"
 #define D_SENSOR_BIOPDU_BIT    "BioPDU Bit"
+#define D_SENSOR_LOX_O2_RX     "LoxO2 RX"
+#define D_GPIO_MAGIC_SWITCH "MagicSwitch"
 
 // Units
 #define D_UNIT_AMPERE "A"
@@ -938,6 +979,7 @@
 #define D_UNIT_GALLONS "gal"
 #define D_UNIT_GALLONS_PER_MIN "g/m"
 #define D_UNIT_KILOGRAM "kg"
+#define D_UNIT_GRAM_PER_CUBIC_METER "g/m³"
 #define D_UNIT_INCH_MERCURY "inHg"
 #define D_UNIT_INCREMENTS "inc"
 #define D_UNIT_KELVIN "K"
@@ -1183,5 +1225,13 @@
 #define D_NEOPOOL_PH_HIGH                 "too high"          // ph Alarms
 #define D_NEOPOOL_PH_LOW                  "too low"
 #define D_NEOPOOL_PUMP_TIME_EXCEEDED      "pump time exceeded"
+
+// xsns_106_gdk101.ino
+#define D_AVG_RAD_DOSE                    "priemerná dávka žiarenia"
+#define D_UNIT_US_H                       "µSv/h"
+
+// ixrv92_pipsolar.ino
+#define D_SENSOR_PIPSOLAR_TX             "Pipsolar TX"
+#define D_SENSOR_PIPSOLAR_RX             "Pipsolar RX"
 
 #endif  // _LANGUAGE_SK_SK_H_

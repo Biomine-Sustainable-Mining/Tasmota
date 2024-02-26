@@ -85,7 +85,7 @@ struct Tm1621 {
  * Driver Settings load and save using filesystem
 \*********************************************************************************************/
 
-const uint32_t XDRV_87_VERSION = 0x0104;          // Latest driver version (See settings deltas below)
+const uint16_t XDRV_87_VERSION = 0x0104;          // Latest driver version (See settings deltas below)
 
 typedef struct {
   uint32_t crc32;                                 // To detect file changes
@@ -160,6 +160,12 @@ void Xdrv87SettingsSave(void) {
     }
   }
 #endif  // USE_UFILESYS
+}
+
+bool Xdrv87SettingsRestore(void) {
+  XdrvMailbox.data = (char*)&Xdrv87Settings;
+  XdrvMailbox.index = sizeof(tXdrv87Settings);
+  return true;
 }
 
 /*********************************************************************************************/
@@ -431,6 +437,7 @@ void TM1621Show(void) {
     return;
   }
 
+#ifdef USE_ENERGY_SENSOR
   if (TM1621_POWR316D == Tm1621.device) {
     if (0 == Tm1621.display_rotate) {
       ext_snprintf_P(Tm1621.row[0], sizeof(Tm1621.row[0]), PSTR("%1_f"), &Energy->voltage[0]);
@@ -446,6 +453,7 @@ void TM1621Show(void) {
     TM1621SendRows();
     return;
   }
+#endif  // USE_ENERGY_SENSOR
 
   if (TM1621_THR316D == Tm1621.device) {
     if (!isnan(TasmotaGlobal.temperature_celsius)) {
@@ -585,11 +593,17 @@ bool Xdrv87(uint32_t function) {
       case FUNC_RESET_SETTINGS:
         Xdrv87SettingsLoad(1);
         break;
+      case FUNC_RESTORE_SETTINGS:
+        result = Xdrv87SettingsRestore();
+        break;
       case FUNC_SAVE_SETTINGS:
         Xdrv87SettingsSave();
         break;
       case FUNC_COMMAND:
         result = DecodeCommand(kTm1621Commands, kTm1621Command);
+        break;
+      case FUNC_ACTIVE:
+        result = true;
         break;
     }
   }
