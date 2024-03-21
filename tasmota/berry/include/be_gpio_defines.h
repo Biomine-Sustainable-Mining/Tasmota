@@ -75,6 +75,7 @@ const be_const_member_t lv_gpio_constants[] = {
     { "ELECTRIQ_MOODL_TX", (int32_t) GPIO_ELECTRIQ_MOODL_TX },
     { "EPAPER29_CS", (int32_t) GPIO_EPAPER29_CS },
     { "EPAPER42_CS", (int32_t) GPIO_EPAPER42_CS },
+    { "WAVESHARE_CS", (int32_t) GPIO_WAVESHARE_CS },
     { "EPD_DATA", (int32_t) GPIO_EPD_DATA },
     { "ETH_PHY_MDC", (int32_t) GPIO_ETH_PHY_MDC },
     { "ETH_PHY_MDIO", (int32_t) GPIO_ETH_PHY_MDIO },

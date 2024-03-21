@@ -2114,6 +2114,7 @@ void GpioInit(void)
                       ValidSpiPinUsed(GPIO_ILI9341_DC) || // there are also boards without cs
                       ValidSpiPinUsed(GPIO_EPAPER29_CS) ||
                       ValidSpiPinUsed(GPIO_EPAPER42_CS) ||
+                      ValidSpiPinUsed(GPIO_WAVESHARE_CS) ||
                       ValidSpiPinUsed(GPIO_ILI9488_CS) ||
                       ValidSpiPinUsed(GPIO_SSD1351_CS) ||
                       ValidSpiPinUsed(GPIO_RA8876_CS) ||
