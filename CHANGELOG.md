@@ -3,7 +3,51 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased] - Development
 
-## [13.4.0.1]
+## [13.4.0.3]
+### Added
+- Zigbee added for attributes of type `uint48` used by energy monitoring
+
+### Breaking Changed
+
+
+### Changed
+- LVGL library from v9.0.0 to v9.1.0
+
+### Fixed
+
+
+### Removed
+
+
+
+## [13.4.0.2] 20240318
+### Added
+- Berry `path.rename()` (#20840)
+- HASPmota support for spangroup (styled text) (#20852)
+- HASPmota support for led (#20857)
+- HASPmota improve arc and img (#20894)
+- Berry `string.startswith`, `string.endswith` and `%q` format (#20909)
+- LVGL `lv.draw_label_dsc` and `lv_bar.get_indic_area` (#20936)
+- HASPmota support for scale, percentages (#20974)
+
+### Breaking Changed
+- Drop support for old (insecure) fingerprint format (#20842)
+- LVGL remove embedded typicons font (#20872)
+- LVGL remove `textarea` and `spinbox` from binaries (#20916)
+
+### Changed
+- LVGL optimize fonts and add icons (#20880)
+- LVGL improved readability of montserrat-10 (#20900)
+- HASPmota moved to a distinct library `lv_haspmota` (#20929)
+- HASPmota solidify server-side (#20938)
+
+### Fixed
+- Berry bug when parsing ternary operator (#20839)
+- HASPmota widgets line, btnmatrix, qrcode, bar, checkbox (#20881)
+- Filesystem save of JSON settings data
+- Berry fix walrus with member or index (#20939)
+
+## [13.4.0.1] 20240229
 ### Added
 - Experimental support for LoRa
 - HASPmota `p<x>b<y>.delete` to delete an object (#20735)
@@ -13,8 +57,8 @@ All notable changes to this project will be documented in this file.
 - TasMesh support for LWT messages (#20392)
 - Show calculated heat index if temperature and humidity is available with ``#define USE_HEAT_INDEX`` (#4771)
 - Berry add explicit error log when memory allocation fails (#20807)
-
-### Breaking Changed
+- Support for AMS5915/AMS6915 temperature and pressure sensors (#20814)
+- IR support data larger than 64 bits (#20831)
 
 ### Changed
 - ESP32 Core3 SPI ethernet support for all models
@@ -23,12 +67,13 @@ All notable changes to this project will be documented in this file.
 - HASPmota fix and improve demo with pixel-perfect fonts (#20734)
 - NeoPool webUI pH alarms (4 & 5) completed (#20743)
 - Matter reduce memory usage when reading with wildcards (#20809)
+- Prevent shutter MQTT broadcast with activated ShutterLock (#20827)
 
 ### Fixed
 - ESP32 PWM activity on unconfigured PWM GPIOs (#20732)
 - Shutter inverted using internal commands (#20752)
-
-### Removed
+- HASPmota PSRAM memory leak (#20818)
+- Berry Memory leak in `import re` (#20823)
 
 ## [Released]
 
@@ -963,6 +1008,7 @@ All notable changes to this project will be documented in this file.
 - DNS lookup for .local domains (#16273)
 - Button response delay regression from v12.0.2.4 (#16319)
 - Lost module name in GUI regression from v12.0.2.4 - 20220803 (#16324)
+- LVGL fix descriptors Berry mapping
 
 ## [12.1.0.1] 20220825
 ### Added

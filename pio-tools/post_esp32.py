@@ -103,7 +103,7 @@ def esp32_detect_flashsize():
                         return size, True
             return "4MB",False
         except subprocess.CalledProcessError as exc:
-            print("Did get chip info failed with " + str(exc))
+            print(Fore.YELLOW + "Did get chip info failed with " + str(exc))
             return "4MB",False
 
 flash_size_from_esp, flash_size_was_overridden = esp32_detect_flashsize()
@@ -166,7 +166,7 @@ def esp32_build_filesystem(fs_size):
                     print("Renaming",(file.split(os.path.sep)[-1]).split(" ")[0],"to",file.split(" ")[1])
                 open(target, "wb").write(response.content)
             else:
-                print("Failed to download: ",file)
+                print(Fore.RED + "Failed to download: ",file)
             continue
         if os.path.isdir(file):
             shutil.copytree(file, filesystem_dir, dirs_exist_ok=True)
@@ -245,16 +245,9 @@ def esp32_create_combined_bin(source, target, env):
         esp32_fetch_safeboot_bin(tasmota_platform)
 
     flash_size = env.BoardConfig().get("upload.flash_size", "4MB")
-    flash_freq = env.BoardConfig().get("build.f_flash", "40000000L")
-    flash_freq = str(flash_freq).replace("L", "")
-    flash_freq = str(int(int(flash_freq) / 1000000)) + "m"
-    flash_mode = env.BoardConfig().get("build.flash_mode", "dio")
-    memory_type = env.BoardConfig().get("build.arduino.memory_type", "qio_qspi")
+    flash_mode = env["__get_board_flash_mode"](env)
+    flash_freq = env["__get_board_f_flash"](env)
 
-    if flash_mode == "qio" or flash_mode == "qout":
-        flash_mode = "dio"
-    if memory_type == "opi_opi" or memory_type == "opi_qspi":
-        flash_mode = "dout"
     cmd = [
         "--chip",
         chip,
