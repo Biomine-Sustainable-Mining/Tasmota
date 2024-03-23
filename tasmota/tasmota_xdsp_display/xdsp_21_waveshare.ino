@@ -1,7 +1,7 @@
 /*
-  xdsp_05_epaper.ino - Display e-paper support for Tasmota
+  xdsp_21_waveshare.ino - Display waveshare support for Tasmota
 
-  Copyright (C) 2021  Theo Arends, Gerhard Mutz and Waveshare
+  TODO: Copyright
 
   This program is free software: you can redistribute it and/or modify
   it under the terms of the GNU General Public License as published by
@@ -43,13 +43,15 @@ bool Xdsp21(uint32_t function)
 
   if (FUNC_DISPLAY_INIT_DRIVER == function) {
   }
-  else if (epd42_init_done && (XDSP_06 == Settings->display_model)) {
+  /*
+  else if (epd42_init_done && (XDSP_21 == Settings->display_model)) {
     switch (function) {
       case FUNC_DISPLAY_MODEL:
         result = true;
         break;
     }
   }
+  */
   return result;
 }
 
