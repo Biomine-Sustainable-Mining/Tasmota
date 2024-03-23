@@ -31,6 +31,7 @@
 // very badly readable, but may be useful for graphs
 #define USE_TINY_FONT
 
+#include <GxEPD2_BW.h>
 
 /*********************************************************************************************\
  * Interface
