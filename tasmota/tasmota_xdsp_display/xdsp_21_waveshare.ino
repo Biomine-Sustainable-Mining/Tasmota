@@ -38,78 +38,83 @@
 #include <Fonts/FreeMonoBold9pt7b.h>
 #include <GxEPD2_display_selection_new_style.h>
 
+// display from <GxEPD2_display_selection_new_style.h>
+
 /*********************************************************************************************\
  * Interface
 \*********************************************************************************************/
 
 bool Xdsp21(uint32_t function)
 {
-  AddLog(LOG_LEVEL_INFO, PSTR("DSP: Waveshare Driver"));
-  if (PinUsed(GPIO_WAVESHARE_CS) && ((TasmotaGlobal.soft_spi_enabled & SPI_MOSI) || (TasmotaGlobal.spi_enabled & SPI_MOSI)))
-  {
-    Serial.println("CS Selected");
 
-    if (TasmotaGlobal.soft_spi_enabled)
-    {
-      Serial.println("SoftSPI");
-      Serial.print("CS: ");
-      Serial.println(Pin(GPIO_WAVESHARE_CS));
-      Serial.print("MOSI: ");
-      Serial.println(Pin(GPIO_SSPI_MOSI));
-      Serial.print("SCLK: ");
-      Serial.println(Pin(GPIO_SSPI_SCLK));
-      Serial.print("DC: ");
-      Serial.println(Pin(GPIO_SSPI_DC));
-      Serial.print("BUSY/MISO: ");
-      Serial.println(Pin(GPIO_SSPI_MISO));
-      Serial.print("Rst: ");
-      Serial.println(Pin(GPIO_OLED_RESET));
-    }
-    else if (TasmotaGlobal.spi_enabled)
-    {
-      Serial.println("HardSPI");
-      Serial.print("CS: ");
-      Serial.println(Pin(GPIO_WAVESHARE_CS));
-      Serial.print("MOSI: ");
-      Serial.println(Pin(GPIO_SPI_MOSI));
-      Serial.print("CLK: ");
-      Serial.println(Pin(GPIO_SPI_CLK));
-      Serial.print("DC: ");
-      Serial.println(Pin(GPIO_SPI_DC));
-      Serial.print("BUSY/MISO: ");
-      Serial.println(Pin(GPIO_SPI_MISO));
-      Serial.print("Rst: ");
-      Serial.println(Pin(GPIO_OLED_RESET));
-      const char HelloWorld[] = "Biomine S.r.l.";
-
-      display.init(9600, true, 2, false); // USE THIS for Waveshare boards with "clever" reset circuit, 2ms reset pulse
-
-      display.setRotation(0);
-      display.setFont(&FreeMonoBold9pt7b);
-
-      display.setTextColor(GxEPD_BLACK);
-      int16_t tbx, tby;
-      uint16_t tbw, tbh;
-      display.getTextBounds(HelloWorld, 0, 0, &tbx, &tby, &tbw, &tbh);
-      // center the bounding box by transposition of the origin:
-      uint16_t x = ((display.width() - tbw) / 2) - tbx;
-      uint16_t y = ((display.height() - tbh) / 2) - tby;
-      display.setFullWindow();
-
-      display.firstPage(); // FILL WHITE
-      do
-      {
-        // display.drawRect(x-10,y+10, 200, -50, GxEPD_BLACK);
-        display.setCursor(x, y);
-        display.print(HelloWorld);
-      } while (display.nextPage());
-      display.hibernate();
-    }
-  }
   bool result = false;
-  if (FUNC_DISPLAY_INIT_DRIVER == function)
-  {
-  }
+  switch(function) {
+  case FUNC_DISPLAY_INIT_DRIVER:
+  
+
+    AddLog(LOG_LEVEL_INFO, PSTR("DSP: Waveshare Driver"));
+    if (PinUsed(GPIO_WAVESHARE_CS) && ((TasmotaGlobal.soft_spi_enabled & SPI_MOSI) || (TasmotaGlobal.spi_enabled & SPI_MOSI)))
+    {
+      Serial.println("CS Selected");
+
+      if (TasmotaGlobal.soft_spi_enabled)
+      {
+        Serial.println("SoftSPI");
+        Serial.print("CS: ");
+        Serial.println(Pin(GPIO_WAVESHARE_CS));
+        Serial.print("MOSI: ");
+        Serial.println(Pin(GPIO_SSPI_MOSI));
+        Serial.print("SCLK: ");
+        Serial.println(Pin(GPIO_SSPI_SCLK));
+        Serial.print("DC: ");
+        Serial.println(Pin(GPIO_SSPI_DC));
+        Serial.print("BUSY/MISO: ");
+        Serial.println(Pin(GPIO_SSPI_MISO));
+        Serial.print("Rst: ");
+        Serial.println(Pin(GPIO_OLED_RESET));
+      }
+      else if (TasmotaGlobal.spi_enabled)
+      {
+        Serial.println("HardSPI");
+        Serial.print("CS: ");
+        Serial.println(Pin(GPIO_WAVESHARE_CS));
+        Serial.print("MOSI: ");
+        Serial.println(Pin(GPIO_SPI_MOSI));
+        Serial.print("CLK: ");
+        Serial.println(Pin(GPIO_SPI_CLK));
+        Serial.print("DC: ");
+        Serial.println(Pin(GPIO_SPI_DC));
+        Serial.print("BUSY/MISO: ");
+        Serial.println(Pin(GPIO_SPI_MISO));
+        Serial.print("Rst: ");
+        Serial.println(Pin(GPIO_OLED_RESET));
+        const char HelloWorld[] = "Biomine S.r.l.";
+        // renderer = &display;
+
+        display.init(9600, true, 2, false); // USE THIS for Waveshare boards with "clever" reset circuit, 2ms reset pulse
+        display.setRotation(0);
+        display.setFont(&FreeMonoBold9pt7b);
+
+        display.setTextColor(GxEPD_BLACK);
+        int16_t tbx, tby;
+        uint16_t tbw, tbh;
+        display.getTextBounds(HelloWorld, 0, 0, &tbx, &tby, &tbw, &tbh);
+        // center the bounding box by transposition of the origin:
+        uint16_t x = ((display.width() - tbw) / 2) - tbx;
+        uint16_t y = ((display.height() - tbh) / 2) - tby;
+        display.setFullWindow();
+
+        display.firstPage(); // FILL WHITE
+        do
+        {
+          // display.drawRect(x-10,y+10, 200, -50, GxEPD_BLACK);
+          display.setCursor(x, y);
+          display.print(HelloWorld);
+        } while (display.nextPage());
+        display.hibernate();
+      }
+    }
+
   /*
   else if (epd42_init_done && (XDSP_21 == Settings->display_model)) {
     switch (function) {
@@ -119,6 +124,12 @@ bool Xdsp21(uint32_t function)
     }
   }
   */
+  break;
+  case FUNC_DISPLAY_CLEAR:
+  break;
+  case FUNC_DISPLAY_DRAW_STRING:
+  break;
+  }
   return result;
 }
 
