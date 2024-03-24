@@ -31,7 +31,15 @@
 // very badly readable, but may be useful for graphs
 #define USE_TINY_FONT
 
+
+#define GxEPD2_DISPLAY_CLASS GxEPD2_BW
+
+#define GxEPD2_DRIVER_CLASS GxEPD2_750_T7
+
+
 #include <GxEPD2_BW.h>
+#include <Fonts/FreeMonoBold9pt7b.h>
+#include <GxEPD2_display_selection_new_style.h>
 
 /*********************************************************************************************\
  * Interface
@@ -40,7 +48,34 @@
 bool Xdsp21(uint32_t function)
 {
   Serial.println("IT IS LOADED");
+  const char HelloWorld[] = "Biomine S.r.l.";
+
   bool result = false;
+
+  display.init(9600, true, 2, false); // USE THIS for Waveshare boards with "clever" reset circuit, 2ms reset pulse
+  
+  display.setRotation(0);
+  display.setFont(&FreeMonoBold9pt7b);
+
+  display.setTextColor(GxEPD_BLACK);
+  int16_t tbx, tby; uint16_t tbw, tbh;
+  display.getTextBounds(HelloWorld, 0, 0, &tbx, &tby, &tbw, &tbh);
+  // center the bounding box by transposition of the origin:
+  uint16_t x = ((display.width() - tbw) / 2) - tbx;
+  uint16_t y = ((display.height() - tbh) / 2) - tby;
+  display.setFullWindow();
+
+  display.firstPage(); //FILL WHITE
+  do
+  {
+    //display.drawRect(x-10,y+10, 200, -50, GxEPD_BLACK);
+    display.setCursor(x,y);
+    display.print(HelloWorld);
+  }
+  while (display.nextPage());
+  display.hibernate();
+
+
 
   if (FUNC_DISPLAY_INIT_DRIVER == function) {
   }
