@@ -196,7 +196,7 @@ const bvector _name = {                                         \
 }
 
 #define be_define_const_native_module(_module)                  \
-const bntvmodule be_native_module(_module) = {                  \
+const bntvmodule_t be_native_module(_module) = {                  \
     .name = #_module,                                           \
     .attrs = NULL,                                              \
     .size = 0,                                                  \
@@ -257,6 +257,13 @@ const bntvmodule be_native_module(_module) = {                  \
 
 /* variant that does not trigger strtab */
 #define be_nested_str_weak(_name_)                              \
+  {                                                             \
+    { .s=((bstring*)&be_const_str_##_name_) },                  \
+    BE_STRING                                                   \
+  }
+
+/* variant for long strings that does not trigger strtab */
+#define be_nested_str_long(_name_)                              \
   {                                                             \
     { .s=((bstring*)&be_const_str_##_name_) },                  \
     BE_STRING                                                   \
@@ -422,7 +429,7 @@ const bvector _name = {                                         \
 }
 
 #define be_define_const_native_module(_module)                  \
-const bntvmodule be_native_module_##_module = {                 \
+const bntvmodule_t be_native_module_##_module = {               \
     #_module,                                                   \
     0, 0,                                                       \
     (bmodule*)&(m_lib##_module)                                 \

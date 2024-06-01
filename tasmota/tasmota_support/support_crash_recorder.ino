@@ -17,6 +17,8 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#ifndef FIRMWARE_MINIMAL
+
 // Generate a crash to test the crash recorder
 void CmndCrash(void)
 {
@@ -30,15 +32,20 @@ void CmndWDT(void)
 {
   volatile uint32_t dummy = 0;
   while (1) {
-    dummy++;
+    dummy = dummy + 1;
   }
 }
 
 // This will trigger the os watch after OSWATCH_RESET_TIME (=120) seconds
+// or normal WDT on ESP32
 void CmndBlockedLoop(void)
 {
   while (1) {
+#ifdef ESP32
+    delay(10000);   // 10s on ESP32 so that the normal WDT fires after 5s. There is no OSWATCH_RESET_TIME on ESP32
+#else
     delay(1000);
+#endif
   }
 }
 
@@ -160,11 +167,8 @@ void CrashDumpClear(void)
 // esp_err_t IRAM_ATTR esp_backtrace_print(int depth)
 
 #include "freertos/xtensa_api.h"
-#if ESP_IDF_VERSION_MAJOR >= 4
-  #include "esp_debug_helpers.h"
-#else  // IDF 3.x
-  #include "esp_panic.h"
-#endif
+#include "esp_debug_helpers.h"
+#include "esp_cpu_utils.h"
 extern "C" {
   // esp-idf 3.x
   void __real_panicHandler(XtExcFrame *frame);
@@ -253,7 +257,7 @@ void CrashDump(void)
   }
   ResponseJsonEnd();
 }
-#elif CONFIG_IDF_TARGET_ESP32C3
+#elif CONFIG_IDF_TARGET_ESP32C2 || CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
 
 extern "C" {
   // esp-idf 3.x
@@ -356,5 +360,7 @@ void CrashDump(void)
 {
 }
 
-#endif 
 #endif
+#endif
+
+#endif  //  FIRMWARE_MINIMAL

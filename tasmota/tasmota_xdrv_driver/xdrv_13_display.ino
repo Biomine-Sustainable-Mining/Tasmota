@@ -237,7 +237,8 @@ uint16_t dsp_rad;
 uint16_t dsp_color;
 int16_t dsp_len;
 
-uint8_t disp_power = 0;
+bool disp_apply_display_dimmer_request = false;
+int8_t disp_power = -1;
 uint8_t disp_device = 0;
 uint8_t disp_refresh = 1;
 uint8_t disp_autodraw = 1;
@@ -293,9 +294,10 @@ void DisplayDrawStringAt(uint16_t x, uint16_t y, char *str, uint16_t color, uint
   XdspCall(FUNC_DISPLAY_DRAW_STRING);
 }
 
-void DisplayOnOff(uint8_t on)
-{
-  ExecuteCommandPower(disp_device, on, SRC_DISPLAY);
+void DisplayOnOff(uint8_t on) {
+  if (disp_device) {
+    ExecuteCommandPower(disp_device, on, SRC_DISPLAY);
+  }
 }
 
 /*-------------------------------------------------------------------------------------------*/
@@ -495,7 +497,11 @@ void DisplayText(void)
         }
       } else {
         // copy chars
-        if (dp < (linebuf + DISPLAY_BUFFER_COLS)) { *dp++ = *cp++; }
+        if (dp < (linebuf + DISPLAY_BUFFER_COLS)) {
+          *dp++ = *cp++;
+        } else {
+          break;
+        }
       }
     } else {
       // check escapes
@@ -588,14 +594,25 @@ void DisplayText(void)
           case 'P':
             { char *ep = strchr(cp,':');
              if (ep) {
-               *ep = 0;
-               ep++;
-               int16_t scale = 0;
+                *ep = 0;
+                ep++;
+                int16_t scale = 0;
+                int16_t xs = 0;
+                int16_t ys = 0;
                if (isdigit(*ep)) {
                  var = atoiv(ep, &scale);
                  ep += var;
+
+                if (*ep == ':') {
+                  ep++;
+                  var = atoiv(ep, &xs);
+                  ep += var;
+                  ep++;
+                  var = atoiv(ep, &ys);
+                  ep += var;
+                }
                }
-               Draw_RGB_Bitmap(cp,disp_xpos,disp_ypos, scale, false);
+               Draw_RGB_Bitmap(cp, disp_xpos, disp_ypos, scale, false, xs, ys);
                cp = ep;
              }
             }
@@ -636,14 +653,20 @@ void DisplayText(void)
                         model = Settings->display_model;
                         fp.read((uint8_t*)fdesc, size);
                         fp.close();
-                        Renderer *svptr = renderer;
-                        Get_display(temp);
-                        renderer = svptr;
-                        if (rot >= 0) {
-                          srot = Settings->display_rotate;
-                          Settings->display_rotate = rot;
+                        if (renderer) {
+                          // save ptr
+                          Set_display(temp);
+                          renderer = nullptr;
+                        } else {
+                          Renderer *svptr = renderer;
+                          Get_display(temp);
+                          renderer = svptr;
+                          if (rot >= 0) {
+                            srot = Settings->display_rotate;
+                            Settings->display_rotate = rot;
+                          }
                         }
-                        renderer = Init_uDisplay(fdesc);
+                        renderer = Init_uDisplay(fdesc); 
                         if (rot >= 0) {
                           Settings->display_rotate = srot;
                         }
@@ -1058,19 +1081,29 @@ extern FS *ffsp;
 #ifdef USE_TOUCH_BUTTONS
           case 'b':
           { int16_t num, gxp, gyp, gxs, gys, outline, fill, textcolor, textsize; uint8_t dflg = 1, sbt = 0;
-            if (*cp == 'e' || *cp == 'd') {
-              // enable disable
+            if (*cp == 'e' || *cp == 'd' || *cp == 'D') {
+              // enable disable delete
               uint8_t dis = 0;
               if (*cp == 'd') dis = 1;
+              uint8_t del = 0;
+              if (*cp == 'D') {
+                del = 1;
+              }
               cp++;
               var = atoiv(cp, &num);
               num = num % MAX_TOUCH_BUTTONS;
               cp += var;
               if (buttons[num]) {
-                buttons[num]->vpower.disable = dis;
-                if (!dis) {
-                  if (buttons[num]->vpower.is_virtual) buttons[num]->xdrawButton(buttons[num]->vpower.on_off);
-                  else buttons[num]->xdrawButton(bitRead(TasmotaGlobal.power,num));
+                if (del) {
+                  if (renderer) renderer->fillRect(buttons[num]->spars.xp, buttons[num]->spars.yp, buttons[num]->spars.xs, buttons[num]->spars.ys, bg_color);
+                   delete buttons[num];
+                   buttons[num] = 0;
+                } else {
+                  buttons[num]->vpower.disable = dis;
+                  if (!dis) {
+                    if (buttons[num]->vpower.is_virtual) buttons[num]->xdrawButton(buttons[num]->vpower.on_off);
+                    else buttons[num]->xdrawButton(bitRead(TasmotaGlobal.power, num));
+                  }
                 }
               }
               break;
@@ -1083,10 +1116,10 @@ extern FS *ffsp;
               cp++;
               sbt = 1;
             }
-            var=atoiv(cp,&num);
-            cp+=var;
-            uint8_t bflags=num>>8;
-            num=num%MAX_TOUCH_BUTTONS;
+            var = atoiv(cp,&num);
+            cp += var;
+            uint8_t bflags = num >> 8;
+            num = num % MAX_TOUCH_BUTTONS;
             if (*cp == 's') {
               cp++;
               var=atoiv(cp,&gxp);
@@ -1136,7 +1169,7 @@ extern FS *ffsp;
               delete buttons[num];
             }
             if (renderer) {
-              buttons[num]= new VButton();
+              buttons[num] = new VButton();
               if (buttons[num]) {
                 if (!sbt) {
                   buttons[num]->vpower.slider = 0;
@@ -1838,14 +1871,13 @@ void DisplayLocalSensor(void)
  * Public
 \*********************************************************************************************/
 
-void DisplayInitDriver(void)
-{
+void DisplayInitDriver(void) {
   XdspCall(FUNC_DISPLAY_INIT_DRIVER);
 
 //  AddLog(LOG_LEVEL_DEBUG, PSTR(D_LOG_DEBUG "Display model %d"), Settings->display_model);
 
   if (Settings->display_model) {
-//    ApplyDisplayDimmer();  // Not allowed here. Way too early in initi sequence. IE power state has not even been set at this point in time
+//    ApplyDisplayDimmer();  // Not allowed here. Way too early in init sequence. Global power state has not been set at this point in time
 
 #ifdef USE_MULTI_DISPLAY
     Set_display(0);
@@ -1874,10 +1906,14 @@ void DisplayInitDriver(void)
     for (uint8_t count = 0; count < NUM_GRAPHS; count++) { graph[count] = 0; }
 #endif
 
-    TasmotaGlobal.devices_present++;
+    UpdateDevicesPresent(1);
     if (!PinUsed(GPIO_BACKLIGHT)) {
-      if (TasmotaGlobal.light_type && (4 == Settings->display_model)) {
-        TasmotaGlobal.devices_present--;  // Assume PWM channel is used for backlight
+//      if (TasmotaGlobal.light_type && (4 == Settings->display_model)) {
+      if (TasmotaGlobal.light_type &&         // Assume PWM channel
+          ((4 == Settings->display_model) ||  // ILI9341 legacy
+           (17 == Settings->display_model))   // Universal
+         ) {
+        UpdateDevicesPresent(-1);  // Assume PWM channel is used for backlight
       }
     }
     disp_device = TasmotaGlobal.devices_present;
@@ -1890,8 +1926,9 @@ void DisplayInitDriver(void)
   }
 }
 
-void DisplaySetPower(void)
-{
+void DisplaySetPower(void) {
+  if (!disp_device) { return; }  // Not initialized yet
+
   disp_power = bitRead(XdrvMailbox.index, disp_device -1);
 
 //AddLog(LOG_LEVEL_DEBUG, PSTR("DSP: Power %d"), disp_power);
@@ -1995,6 +2032,10 @@ void CmndDisplayMode(void) {
 
 // Apply the current display dimmer
 void ApplyDisplayDimmer(void) {
+  disp_apply_display_dimmer_request = true;
+  if ((disp_power < 0) || !disp_device) { return; }  // Not initialized yet
+  disp_apply_display_dimmer_request = false;
+
   uint8_t dimmer8 = changeUIntScale(GetDisplayDimmer(), 0, 100, 0, 255);
   uint16_t dimmer10_gamma = ledGamma10(dimmer8);
   if (dimmer8 && !(disp_power)) {
@@ -2141,7 +2182,7 @@ void CmndDisplayText(void) {
 #ifndef USE_DISPLAY_MODES1TO5
     DisplayText();
 #else
-    if(Settings->display_model == 15) {
+    if(Settings->display_model == 15 || Settings->display_model == 20) {
       XdspCall(FUNC_DISPLAY_SEVENSEG_TEXT);
     } else if (!Settings->display_mode) {
       DisplayText();
@@ -2279,7 +2320,7 @@ char ppath[16];
   } else {
     strcat(ppath, ".jpg");
   }
-  Draw_RGB_Bitmap(ppath, xp, yp, 0, inverted);
+  Draw_RGB_Bitmap(ppath, xp, yp, 0, inverted, 0, 0);
 }
 #endif  // USE_TOUCH_BUTTONS
 
@@ -2299,7 +2340,7 @@ char get_jpeg_size(unsigned char* data, unsigned int data_size, unsigned short *
 #ifdef USE_UFILESYS
 extern FS *ufsp;
 #define XBUFF_LEN 128
-void Draw_RGB_Bitmap(char *file, uint16_t xp, uint16_t yp, uint8_t scale, bool inverted ) {
+void Draw_RGB_Bitmap(char *file, uint16_t xp, uint16_t yp, uint8_t scale, bool inverted, uint16_t xs, uint16_t ys ) {
   if (!renderer) return;
   File fp;
   char *ending = 0;
@@ -2315,7 +2356,6 @@ void Draw_RGB_Bitmap(char *file, uint16_t xp, uint16_t yp, uint8_t scale, bool i
   for (uint32_t cnt = 0; cnt < strlen(ending); cnt++) {
     estr[cnt] = tolower(ending[cnt]);
   }
-  estr[3] = 0;
 
   if (!strcmp(estr,"rgb")) {
     // special rgb format
@@ -2325,6 +2365,16 @@ void Draw_RGB_Bitmap(char *file, uint16_t xp, uint16_t yp, uint8_t scale, bool i
     fp.read((uint8_t*)&xsize, 2);
     uint16_t ysize;
     fp.read((uint8_t*)&ysize, 2);
+    uint16_t xoffs;
+    uint16_t yoffs;
+    if (xs > 0) {
+      // center in area
+      xoffs = (xs - xsize) / 2;
+      yoffs = (ys - ysize) / 2;
+      xp += xoffs;
+      yp += yoffs;
+    }
+
 #ifndef SLOW_RGB16
     renderer->setAddrWindow(xp, yp, xp + xsize, yp + ysize);
     uint16_t *rgb = (uint16_t *)special_malloc(xsize * 2);
@@ -2352,7 +2402,7 @@ void Draw_RGB_Bitmap(char *file, uint16_t xp, uint16_t yp, uint8_t scale, bool i
     }
 #endif
     fp.close();
-  } else if (!strcmp(estr,"jpg")) {
+  } else if (!strcmp(estr,"jpg") || !strcmp(estr,"jpeg")) {
     // jpeg files on ESP32 with more memory
 #ifdef ESP32
 #ifdef JPEG_PICTS
@@ -2369,8 +2419,17 @@ void Draw_RGB_Bitmap(char *file, uint16_t xp, uint16_t yp, uint8_t scale, bool i
       if (res) {
         uint16_t xsize;
         uint16_t ysize;
+        uint16_t xoffs;
+        uint16_t yoffs;
         if (mem[0] == 0xff && mem[1] == 0xd8) {
           get_jpeg_size(mem, size, &xsize, &ysize);
+          if (xs > 0) {
+            // center in area
+            xoffs = (xs - xsize) / 2;
+            yoffs = (ys - ysize) / 2;
+            xp += xoffs;
+            yp += yoffs;
+          }
           //Serial.printf(" x,y,fs %d - %d - %d\n",xsize, ysize, size );
           if (xsize && ysize) {
             uint8_t *out_buf = (uint8_t *)special_malloc((xsize * ysize * 3) + 4);
@@ -2398,6 +2457,9 @@ void Draw_RGB_Bitmap(char *file, uint16_t xp, uint16_t yp, uint8_t scale, bool i
                 free(out_buf);
               }
             }
+          }
+          if (scale) {
+            if (renderer) renderer->drawRect(xp, yp, xsize, ysize, GetColorFromIndex(scale));
           }
         }
         free(mem);
@@ -2890,6 +2952,11 @@ bool Xdrv13(uint32_t function)
       case FUNC_PRE_INIT:
         DisplayInitDriver();
         break;
+      case FUNC_INIT:
+        if (disp_apply_display_dimmer_request) {
+          ApplyDisplayDimmer();  // Allowed here.
+        }
+        break;
       case FUNC_EVERY_50_MSECOND:
         if (Settings->display_model) { XdspCall(FUNC_DISPLAY_EVERY_50_MSECOND); }
         break;
@@ -2927,6 +2994,9 @@ bool Xdrv13(uint32_t function)
 #endif  // USE_DISPLAY_MODES1TO5
       case FUNC_COMMAND:
         result = DecodeCommand(kDisplayCommands, DisplayCommand);
+        break;
+      case FUNC_ACTIVE:
+        result = true;
         break;
     }
   }

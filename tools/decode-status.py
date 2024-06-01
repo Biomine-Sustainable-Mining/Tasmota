@@ -65,7 +65,7 @@ a_setoption = [[
     "(Settings) Switch between dynamic (0) or fixed (1) slot flash save location",
     "(Button) Support only single press (1) to speed up button press recognition",
     "(Interlock) Power interlock mode",
-    "(Light) Switch between commands PWM (1) or COLOR/DIMMER/CT/CHANNEL (0)",
+    "(Light) Switch between commands PWM (0) or COLOR/DIMMER/CT/CHANNEL (1)",
     "(WS2812) Switch between clockwise (0) or counter-clockwise (1)",
     "(Light) Switch between decimal (1) or hexadecimal (0) output",
     "(Light) Pair light signal (1) with CO2 sensor",
@@ -90,7 +90,7 @@ a_setoption = [[
     "(Restart) Number of restarts to start detecting boot loop (default 1)",
     "(Light) RGB and White channel separation (default 0)",
     "(IR) Set the smallest sized UNKNOWN message packets we actually care about (default 6, max 255)",
-    "(CSE7766) Number of invalid power measurements before declaring it invalid allowing low load measurments (default 128)",
+    "(CSE7766) Number of invalid power measurements before declaring it invalid allowing low load measurements (default 128)",
     "(Button/Shutter) Ignore button change in seconds (default 0)",
     "(Wifi) Interval in seconds between gratuitous ARP requests (default 60)",
     "(Energy) Turn all power off at or above this temperature (default 90C)",
@@ -99,7 +99,7 @@ a_setoption = [[
     "(Bistable) Pulse time in milliseconds for two coil bistable latching relays (default 40)",
     "(PowerOn) Add delay of 10 x value milliseconds at power on",
     "(PowerOn) Add delay of value seconds at power on before activating relays",
-    "(not used) Energy Tariff2 start hour",
+    "(Energy) Support energy dummy relays",
     "",
     ],[
     "(Timers) Enabled",
@@ -205,9 +205,17 @@ a_setoption = [[
     "(MQTT) Disable publish SSerialReceived MQTT messages, you must use event trigger rules instead",
     "(Light) start DMX ArtNet at boot, listen to UDP port as soon as network is up",
     "(Wifi) prefer IPv6 DNS resolution to IPv4 address when available. Requires `#define USE_IPV6`",
-    "","","","",
-    "","","","",
-    "","","","",
+    "(Energy) Force no voltage/frequency common",
+    "(Matter) Enable Matter protocol over Wifi",
+    "(Power) Switch between two (0) or one (1) pin bistable relay control",
+    "(Berry) Disable autoexec.be on restart (1)",
+    "(Berry) Handle berry led using RMT0 as additional WS2812 scheme",
+    "(ZCDimmer) Enable rare falling Edge dimmer instead of leading edge",
+    "(Sen5x) Run in passive mode when there is another I2C master (e.g. Ikea Vindstyrka), i.e. do not set up Sen5x sensor, higher polling interval",
+    "(NeoPool) Output sensitive data (1)",
+    "(MQTT) Disable publish ModbusReceived MQTT messages (1), you must use event trigger rules instead",
+    "(Counter) Enable counting on both rising and falling edge (1)",
+    "","",
     "","","","",
     "","","","",
     "","","","",
@@ -290,7 +298,16 @@ a_features = [[
     "USE_SGP40","USE_LUXV30B","USE_CANSNIFFER","USE_QMC5883L",
     "USE_MODBUS_ENERGY","USE_SHELLY_PRO","USE_DALI","USE_BP1658CJ",
     "USE_DINGTIAN_RELAY","USE_HMC5883L","USE_LD2410","USE_ME007",
-    "USE_DISPLAY_TM1650","USE_PCA9632","USE_TUYAMCUBR","",
+    "USE_DISPLAY_TM1650","USE_PCA9632","USE_TUYAMCUBR","USE_SEN5X",
+    "USE_BIOPDU","USE_MCP23XXX_DRV","USE_PMSA003I","USE_LOX_O2",
+    "USE_GDK101","USE_GM861","USE_TC74","USE_PCA9557",
+    "USE_SGP4X","USE_MAX17043","USE_ENS16x","USE_ENS210",
+    "USE_HC8","USE_HDMI_CEC","USE_BLE_ESP32","USE_MATTER_DEVICE"
+    ],[
+    "USE_MAGIC_SWITCH","USE_PIPSOLAR","USE_GPIO_VIEWER","USE_AMSX915",
+    "USE_SPI_LORA","USE_SPL06_007","","",
+    "","","","",
+    "","","","",
     "","","","",
     "","","","",
     "","","","",
@@ -322,7 +339,7 @@ else:
         obj = json.load(fp)
 
 def StartDecode():
-    print ("\n*** decode-status.py v12.3.1.2 by Theo Arends and Jacek Ziolkowski ***")
+    print ("\n*** decode-status.py v13.4.0.1 by Theo Arends and Jacek Ziolkowski ***")
 
 #    print("Decoding\n{}".format(obj))
 

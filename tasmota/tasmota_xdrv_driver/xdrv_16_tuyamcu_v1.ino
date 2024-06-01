@@ -63,6 +63,8 @@
 
 TasmotaSerial *TuyaSerial = nullptr;
 
+void TuyaSendCmd(uint8_t cmd, uint8_t payload[], uint16_t payload_len);
+
 struct TUYA {
   uint16_t Levels[5] = {0,0,0,0,0};       // Array to store the values of TuyaMCU channels
   uint16_t Snapshot[5] = {0,0,0,0,0};     // Array to store a snapshot of Tasmota actual channel values
@@ -76,7 +78,6 @@ struct TUYA {
   bool SuspendTopic = false;              // Used to reduce the load at init time or when polling the configuraton on demand
   uint32_t ignore_topic_timeout = 0;      // Suppress the /STAT topic (if enabled) to avoid data overflow until the configuration is over
   bool ignore_dim = false;                // Flag to skip serial send to prevent looping when processing inbound states from the faceplate interaction
-  uint8_t cmd_status = 0;                 // Current status of serial-read
   uint8_t cmd_checksum = 0;               // Checksum of tuya command
   uint8_t data_len = 0;                   // Data lenght of command
   uint8_t wifi_state = -2;                // Keep MCU wifi-status in sync with WifiState()
@@ -86,12 +87,16 @@ struct TUYA {
 #endif // USE_ENERGY_SENSOR
   char *buffer = nullptr;                 // Serial receive buffer
   int byte_counter = 0;                   // Index in serial receive buffer
+  uint8_t last_button;
   bool low_power_mode = false;            // Normal or Low power mode protocol
   bool send_success_next_second = false;  // Second command success in low power mode
   uint32_t ignore_dimmer_cmd_timeout = 0; // Time until which received dimmer commands should be ignored
   bool ignore_tuyareceived = false;       // When a modeset changes ignore stat
   bool active;
+  uint32_t time_last_cmd;                 // to compute timeout on response and not sending another message
 } Tuya;
+
+#define TUYA_CMD_TIMEOUT        200
 
 #define D_JSON_TUYA_MCU_RECEIVED "TuyaReceived"
 
@@ -166,9 +171,6 @@ TuyaSend6 11,ABCD -> Sends raw (Type 0) data to dpId
 */
 
 void CmndTuyaSend(void) {
-  if (XdrvMailbox.index > 6 && XdrvMailbox.index < 8) {
-    return;
-  }
   if (XdrvMailbox.index == 0) {
     TuyaRequestState(0);
     ResponseCmndDone();
@@ -207,6 +209,18 @@ void CmndTuyaSend(void) {
           TuyaSendEnum(dpId, strtoul(data, nullptr, 0));
         } else if (6 == XdrvMailbox.index) {
           TuyaSendRaw(dpId, data);
+        } else if (7 == XdrvMailbox.index) {
+          uint8_t cmd = dpId;
+          // send ANY cmd with payload from hex string
+          // calculates length and checksum for you.
+          // like "0," to send a heartbeat, "3,4" to set wifi led mode,
+          // "0x1c,0110041305060702" - set local time
+          // sends immediately....
+          uint16_t strSize = strlen(data);
+          uint16_t len = strSize/2;
+          uint8_t value[len];
+          convertHexStringtoBytes(value, data, len);
+          TuyaSendCmd(cmd, value, len);
         }
         ResponseCmndDone();
       }
@@ -476,6 +490,7 @@ void TuyaSendCmd(uint8_t cmd, uint8_t payload[] = nullptr, uint16_t payload_len 
   }
   TuyaSerial->write(checksum);
   TuyaSerial->flush();
+  Tuya.time_last_cmd = millis() | 1; // cheap trick to avoid 0
   snprintf_P(log_data, sizeof(log_data), PSTR("%s%02x\""), log_data, checksum);
   AddLogData(LOG_LEVEL_DEBUG, log_data);
 }
@@ -812,16 +827,16 @@ void TuyaProcessStatePacket(void) {
             uint16_t tmpVol = Tuya.buffer[dpidStart + 4] << 8 | Tuya.buffer[dpidStart + 5];
             uint16_t tmpCur = Tuya.buffer[dpidStart + 7] << 8 | Tuya.buffer[dpidStart + 8];
             uint16_t tmpPow = Tuya.buffer[dpidStart + 10] << 8 | Tuya.buffer[dpidStart + 11];
-          Energy.voltage[0] = (float)tmpVol / 10;
-          Energy.current[0] = (float)tmpCur / 1000;
-          Energy.active_power[0] = (float)tmpPow;
+          Energy->voltage[0] = (float)tmpVol / 10;
+          Energy->current[0] = (float)tmpCur / 1000;
+          Energy->active_power[0] = (float)tmpPow;
           AddLog(LOG_LEVEL_DEBUG, PSTR("TYA: Rx ID=%d Voltage=%d"), Tuya.buffer[dpidStart], tmpVol);
           AddLog(LOG_LEVEL_DEBUG, PSTR("TYA: Rx ID=%d Current=%d"), Tuya.buffer[dpidStart], tmpCur);
           AddLog(LOG_LEVEL_DEBUG, PSTR("TYA: Rx ID=%d Active_Power=%d"), Tuya.buffer[dpidStart], tmpPow);
 
           if (RtcTime.valid) {
-            if (Tuya.lastPowerCheckTime != 0 && Energy.active_power[0] > 0) {
-              Energy.kWhtoday[0] += Energy.active_power[0] * (float)(Rtc.utc_time - Tuya.lastPowerCheckTime) / 36.0;
+            if (Tuya.lastPowerCheckTime != 0 && Energy->active_power[0] > 0) {
+              Energy->kWhtoday[0] += Energy->active_power[0] * (float)(Rtc.utc_time - Tuya.lastPowerCheckTime) / 36.0;
               EnergyUpdateToday();
             }
             Tuya.lastPowerCheckTime = Rtc.utc_time;
@@ -847,11 +862,11 @@ void TuyaProcessStatePacket(void) {
             if (Tuya.buffer[dpidStart + 4]) { PowerOff = true; }
           }
         } else if (fnId >= TUYA_MCU_FUNC_SWT1 && fnId <= TUYA_MCU_FUNC_SWT4) {
-          AddLog(LOG_LEVEL_DEBUG, PSTR("TYA: RX Switch-%d --> MCU State: %d Current State:%d"),fnId - TUYA_MCU_FUNC_SWT1 + 1,Tuya.buffer[dpidStart + 4], SwitchGetVirtual(fnId - TUYA_MCU_FUNC_SWT1));
-
-          if (SwitchGetVirtual(fnId - TUYA_MCU_FUNC_SWT1) != Tuya.buffer[dpidStart + 4]) {
-            SwitchSetVirtual(fnId - TUYA_MCU_FUNC_SWT1, Tuya.buffer[dpidStart + 4]);
-            SwitchHandler(1);
+          uint32_t switch_index = fnId - TUYA_MCU_FUNC_SWT1;
+          uint32_t switch_state = SwitchGetState(switch_index);
+          AddLog(LOG_LEVEL_DEBUG, PSTR("TYA: RX Switch-%d --> MCU State: %d Current State:%d"), switch_index +1, Tuya.buffer[dpidStart + 4], switch_state);
+          if (switch_state != Tuya.buffer[dpidStart + 4]) {
+            SwitchSetState(switch_index, Tuya.buffer[dpidStart + 4]);
           }
         }
         if (PowerOff) { Tuya.ignore_dimmer_cmd_timeout = millis() + 250; }
@@ -950,24 +965,24 @@ void TuyaProcessStatePacket(void) {
         }
   #ifdef USE_ENERGY_SENSOR
         else if (tuya_energy_enabled && fnId == TUYA_MCU_FUNC_VOLTAGE) {
-          Energy.voltage[0] = (float)packetValue / 10;
+          Energy->voltage[0] = (float)packetValue / 10;
           AddLog(LOG_LEVEL_DEBUG, PSTR("TYA: Rx ID=%d Voltage=%d"), Tuya.buffer[dpidStart], packetValue);
         } else if (tuya_energy_enabled && fnId == TUYA_MCU_FUNC_CURRENT) {
-          Energy.current[0] = (float)packetValue / 1000;
+          Energy->current[0] = (float)packetValue / 1000;
           AddLog(LOG_LEVEL_DEBUG, PSTR("TYA: Rx ID=%d Current=%d"), Tuya.buffer[dpidStart], packetValue);
         } else if (tuya_energy_enabled && fnId == TUYA_MCU_FUNC_POWER) {
-          Energy.active_power[0] = (float)packetValue / 10;
+          Energy->active_power[0] = (float)packetValue / 10;
           AddLog(LOG_LEVEL_DEBUG, PSTR("TYA: Rx ID=%d Active_Power=%d"), Tuya.buffer[dpidStart], packetValue);
 
           if (RtcTime.valid) {
-            if (Tuya.lastPowerCheckTime != 0 && Energy.active_power[0] > 0) {
-              Energy.kWhtoday[0] += Energy.active_power[0] * (float)(Rtc.utc_time - Tuya.lastPowerCheckTime) / 36.0;
+            if (Tuya.lastPowerCheckTime != 0 && Energy->active_power[0] > 0) {
+              Energy->kWhtoday[0] += Energy->active_power[0] * (float)(Rtc.utc_time - Tuya.lastPowerCheckTime) / 36.0;
               EnergyUpdateToday();
             }
             Tuya.lastPowerCheckTime = Rtc.utc_time;
           }
         } else if (tuya_energy_enabled && fnId == TUYA_MCU_FUNC_POWER_TOTAL) {
-          Energy.import_active[0] = (float)packetValue / 100;
+          Energy->import_active[0] = (float)packetValue / 100;
           AddLog(LOG_LEVEL_DEBUG, PSTR("TYA: Rx ID=%d Total_Power=%d"), Tuya.buffer[dpidStart], packetValue);
           EnergyUpdateTotal();
         }
@@ -1111,7 +1126,7 @@ void TuyaNormalPowerModePacketProcess(void)
         // If LED_1 not yet configured
         if (!led1_set) {
           // Check is the GPIO is not already in use and if it is valid
-          if (!Settings->my_gp.io[led1_gpio] && ValidPin(led1_gpio,GPIO_LED1)) {
+          if (!Settings->my_gp.io[led1_gpio] && ValidPin(led1_gpio,GPIO_LED1, true)) {
             Settings->my_gp.io[led1_gpio] = AGPIO(GPIO_LED1);
             TasmotaGlobal.restart_flag = 2;
             AddLog(LOG_LEVEL_DEBUG, PSTR("TYA: Set LED1 on gpio%d, will restart"), led1_gpio);
@@ -1122,7 +1137,7 @@ void TuyaNormalPowerModePacketProcess(void)
         // If KEY_1 not yet configured
         if (!key1_set) {
           // Check is the GPIO is not already in use and if it is valid
-          if (!Settings->my_gp.io[key1_gpio] && ValidPin(key1_gpio,GPIO_KEY1)) {
+          if (!Settings->my_gp.io[key1_gpio] && ValidPin(key1_gpio,GPIO_KEY1, true)) {
             Settings->my_gp.io[key1_gpio] = AGPIO(GPIO_KEY1);
             TasmotaGlobal.restart_flag = 2;
             AddLog(LOG_LEVEL_DEBUG, PSTR("TYA: Set KEY1 on gpio%d, will restart"), key1_gpio);
@@ -1133,7 +1148,7 @@ void TuyaNormalPowerModePacketProcess(void)
       }
       TuyaRequestState(0);
       break;
-    case TUYA_CMD_GET_WIFI_STRENGTH: 
+    case TUYA_CMD_GET_WIFI_STRENGTH:
       TuyaSetWifiStrength();
       break;
     case TUYA_CMD_TEST_WIFI:
@@ -1180,13 +1195,13 @@ bool TuyaModuleSelected(void) {
     if ((Settings->tuya_fnid_map[i].fnid >= TUYA_MCU_FUNC_REL1 && Settings->tuya_fnid_map[i].fnid <= TUYA_MCU_FUNC_REL8 ) ||
     (Settings->tuya_fnid_map[i].fnid >= TUYA_MCU_FUNC_REL1_INV && Settings->tuya_fnid_map[i].fnid <= TUYA_MCU_FUNC_REL8_INV )) {
       relaySet = true;
-      TasmotaGlobal.devices_present++;
+      UpdateDevicesPresent(1);
     }
   }
 
   if (!relaySet && TuyaGetDpId(TUYA_MCU_FUNC_DUMMY) == 0) { //by default the first relay is created automatically the dummy let remove it if not needed
     TuyaAddMcuFunc(TUYA_MCU_FUNC_REL1, 1);
-    TasmotaGlobal.devices_present++;
+    UpdateDevicesPresent(1);
     SettingsSaveAll();
   }
 
@@ -1233,6 +1248,9 @@ void TuyaInit(void) {
     TuyaSerial = new TasmotaSerial(Pin(GPIO_TUYA_RX), Pin(GPIO_TUYA_TX), 2);
     if (TuyaSerial->begin(baudrate)) {
       if (TuyaSerial->hardwareSerial()) { ClaimSerial(); }
+#ifdef ESP32
+      AddLog(LOG_LEVEL_DEBUG, PSTR("TYA: Serial UART%d"), TuyaSerial->getUart());
+#endif  // ESP32
       // Get MCU Configuration
       Tuya.SuspendTopic = true;
       Tuya.ignore_topic_timeout = millis() + 1000; // suppress /STAT topic for 1000ms to avoid data overflow
@@ -1246,150 +1264,176 @@ void TuyaInit(void) {
   Tuya.active = false;
 }
 
-void TuyaSerialInput(void)
-{
-  while (TuyaSerial->available()) {
-    yield();
-    uint8_t serial_in_byte = TuyaSerial->read();
+void TuyaProcessMessage(void) {
+  char hex_char[(Tuya.byte_counter * 2) + 2];
+  uint16_t len = Tuya.buffer[4] << 8 | Tuya.buffer[5];
 
-    if (serial_in_byte == 0x55) {            // Start TUYA Packet
-      Tuya.cmd_status = 1;
-      Tuya.buffer[Tuya.byte_counter++] = serial_in_byte;
-      Tuya.cmd_checksum += serial_in_byte;
-    }
-    else if (Tuya.cmd_status == 1 && serial_in_byte == 0xAA) { // Only packtes with header 0x55AA are valid
-      Tuya.cmd_status = 2;
+  Response_P(PSTR("{\"" D_JSON_TUYA_MCU_RECEIVED "\":{\"Data\":\"%s\",\"Cmnd\":%d"), ToHex_P((unsigned char*)Tuya.buffer, Tuya.byte_counter, hex_char, sizeof(hex_char)), Tuya.buffer[3]);
 
-      Tuya.byte_counter = 0;
-      Tuya.buffer[Tuya.byte_counter++] = 0x55;
-      Tuya.buffer[Tuya.byte_counter++] = 0xAA;
-      Tuya.cmd_checksum = 0xFF;
-    }
-    else if (Tuya.cmd_status == 2) {
-      if (Tuya.byte_counter == 5) { // Get length of data
-        Tuya.cmd_status = 3;
-        Tuya.data_len = serial_in_byte;
-      }
-      Tuya.cmd_checksum += serial_in_byte;
-      Tuya.buffer[Tuya.byte_counter++] = serial_in_byte;
-    }
-    else if ((Tuya.cmd_status == 3) && (Tuya.byte_counter == (6 + Tuya.data_len)) && (Tuya.cmd_checksum == serial_in_byte)) { // Compare checksum and process packet
-      Tuya.buffer[Tuya.byte_counter++] = serial_in_byte;
+  uint16_t DataVal = 0;
+  uint8_t dpId = 0;
+  uint8_t dpDataType = 0;
+  char DataStr[15];
+  bool isCmdToSuppress = false;
+  Tuya.time_last_cmd = 0;
 
-      char hex_char[(Tuya.byte_counter * 2) + 2];
-      uint16_t len = Tuya.buffer[4] << 8 | Tuya.buffer[5];
+  if (len > 0) {
+    ResponseAppend_P(PSTR(",\"CmndData\":\"%s\""), ToHex_P((unsigned char*)&Tuya.buffer[6], len, hex_char, sizeof(hex_char)));
+    if (TUYA_CMD_STATE == Tuya.buffer[3]) {
+      //55 AA 03 07 00 0D 01 04 00 01 02 02 02 00 04 00 00 00 1A 40
+      // 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19
+      uint8_t dpidStart = 6;
+      while (dpidStart + 4 < Tuya.byte_counter) {
+        dpId = Tuya.buffer[dpidStart];
+        dpDataType = Tuya.buffer[dpidStart + 1];
+        uint16_t dpDataLen = Tuya.buffer[dpidStart + 2] << 8 | Tuya.buffer[dpidStart + 3];
+        const unsigned char *dpData = (unsigned char*)&Tuya.buffer[dpidStart + 4];
+        const char *dpHexData = ToHex_P(dpData, dpDataLen, hex_char, sizeof(hex_char));
 
-      Response_P(PSTR("{\"" D_JSON_TUYA_MCU_RECEIVED "\":{\"Data\":\"%s\",\"Cmnd\":%d"), ToHex_P((unsigned char*)Tuya.buffer, Tuya.byte_counter, hex_char, sizeof(hex_char)), Tuya.buffer[3]);
-
-      uint16_t DataVal = 0;
-      uint8_t dpId = 0;
-      uint8_t dpDataType = 0;
-      char DataStr[15];
-      bool isCmdToSuppress = false;
-
-      if (len > 0) {
-        ResponseAppend_P(PSTR(",\"CmndData\":\"%s\""), ToHex_P((unsigned char*)&Tuya.buffer[6], len, hex_char, sizeof(hex_char)));
         if (TUYA_CMD_STATE == Tuya.buffer[3]) {
-          //55 AA 03 07 00 0D 01 04 00 01 02 02 02 00 04 00 00 00 1A 40
-          // 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19
-          uint8_t dpidStart = 6;
-          while (dpidStart + 4 < Tuya.byte_counter) {
-            dpId = Tuya.buffer[dpidStart];
-            dpDataType = Tuya.buffer[dpidStart + 1];
-            uint16_t dpDataLen = Tuya.buffer[dpidStart + 2] << 8 | Tuya.buffer[dpidStart + 3];
-            const unsigned char *dpData = (unsigned char*)&Tuya.buffer[dpidStart + 4];
-            const char *dpHexData = ToHex_P(dpData, dpDataLen, hex_char, sizeof(hex_char));
-
-            if (TUYA_CMD_STATE == Tuya.buffer[3]) {
-              ResponseAppend_P(PSTR(",\"DpType%uId%u\":"), dpDataType, dpId);
-              if (TUYA_TYPE_BOOL == dpDataType && dpDataLen == 1) {
-                ResponseAppend_P(PSTR("%u"), dpData[0]);
-                DataVal = dpData[0];
-              } else if (TUYA_TYPE_VALUE == dpDataType && dpDataLen == 4) {
-                uint32_t dpValue = (uint32_t)dpData[0] << 24 | (uint32_t)dpData[1] << 16 | (uint32_t)dpData[2] << 8 | (uint32_t)dpData[3] << 0;
-                ResponseAppend_P(PSTR("%u"), dpValue);
-                DataVal = dpValue;
-              } else if (TUYA_TYPE_STRING == dpDataType) {
-                ResponseAppend_P(PSTR("\"%.*s\""), dpDataLen, dpData);
-                snprintf_P(DataStr, sizeof(DataStr), PSTR("%.*s"), dpDataLen, dpData);
-              } else if (TUYA_TYPE_ENUM == dpDataType && dpDataLen == 1) {
-                ResponseAppend_P(PSTR("%u"), dpData[0]);
-                DataVal = dpData[0];
-              } else {
-                ResponseAppend_P(PSTR("\"0x%s\""), dpHexData);
-                snprintf_P(DataStr, sizeof(DataStr), PSTR("%s"), dpHexData);
-              }
-            }
-
-            ResponseAppend_P(PSTR(",\"%d\":{\"DpId\":%d,\"DpIdType\":%d,\"DpIdData\":\"%s\""), dpId, dpId, dpDataType, dpHexData);
-            if (TUYA_TYPE_STRING == dpDataType) {
-              ResponseAppend_P(PSTR(",\"Type3Data\":\"%.*s\""), dpDataLen, dpData);
-            }
-            ResponseAppend_P(PSTR("}"));
-            dpidStart += dpDataLen + 4;
+          ResponseAppend_P(PSTR(",\"DpType%uId%u\":"), dpDataType, dpId);
+          if (TUYA_TYPE_BOOL == dpDataType && dpDataLen == 1) {
+            ResponseAppend_P(PSTR("%u"), dpData[0]);
+            DataVal = dpData[0];
+          } else if (TUYA_TYPE_VALUE == dpDataType && dpDataLen == 4) {
+            uint32_t dpValue = (uint32_t)dpData[0] << 24 | (uint32_t)dpData[1] << 16 | (uint32_t)dpData[2] << 8 | (uint32_t)dpData[3] << 0;
+            ResponseAppend_P(PSTR("%u"), dpValue);
+            DataVal = dpValue;
+          } else if (TUYA_TYPE_STRING == dpDataType) {
+            ResponseAppend_P(PSTR("\"%.*s\""), dpDataLen, dpData);
+            snprintf_P(DataStr, sizeof(DataStr), PSTR("%.*s"), dpDataLen, dpData);
+          } else if (TUYA_TYPE_ENUM == dpDataType && dpDataLen == 1) {
+            ResponseAppend_P(PSTR("%u"), dpData[0]);
+            DataVal = dpData[0];
+          } else {
+            ResponseAppend_P(PSTR("\"0x%s\""), dpHexData);
+            snprintf_P(DataStr, sizeof(DataStr), PSTR("%s"), dpHexData);
           }
         }
-      }
-      ResponseAppend_P(PSTR("}}"));
 
-      if (Settings->flag3.tuya_serial_mqtt_publish) {  // SetOption66 - Enable TuyaMcuReceived messages over Mqtt
-        for (uint8_t cmdsID = 0; sizeof(TuyaExcludeCMDsFromMQTT) > cmdsID; cmdsID++){
-          if (TuyaExcludeCMDsFromMQTT[cmdsID] == Tuya.buffer[3]) {
-            isCmdToSuppress = true;
-            break;
-          }
+        ResponseAppend_P(PSTR(",\"%d\":{\"DpId\":%d,\"DpIdType\":%d,\"DpIdData\":\"%s\""), dpId, dpId, dpDataType, dpHexData);
+        if (TUYA_TYPE_STRING == dpDataType) {
+          ResponseAppend_P(PSTR(",\"Type3Data\":\"%.*s\""), dpDataLen, dpData);
         }
-        if (!(isCmdToSuppress && Settings->flag5.tuya_exclude_from_mqtt)) {  // SetOption137 - (Tuya) When Set, avoid the (MQTT-) publish of defined Tuya CMDs (see TuyaExcludeCMDsFromMQTT) if SetOption66 is active
-          MqttPublishPrefixTopic_P(RESULT_OR_TELE, PSTR(D_JSON_TUYA_MCU_RECEIVED));
-        } else {
-          AddLog(LOG_LEVEL_DEBUG, ResponseData());
-        }
-      } else {
-        AddLog(LOG_LEVEL_DEBUG, ResponseData());
+        ResponseAppend_P(PSTR("}"));
+        dpidStart += dpDataLen + 4;
       }
-      XdrvRulesProcess(0);
-
-      if (dpId != 0 && Settings->tuyamcu_topic) { // Publish a /STAT Topic ready to use for any home automation system
-        if (!Tuya.SuspendTopic) {
-          char scommand[13];
-          snprintf_P(scommand, sizeof(scommand), PSTR("DpType%uId%u"), dpDataType, dpId);
-          if (dpDataType != 3 && dpDataType != 5) { Response_P(PSTR("%u"), DataVal); }
-          else { Response_P(PSTR("%s"), DataStr); }
-          MqttPublishPrefixTopic_P(STAT, scommand);
-        }
-      }
-
-      if (!Tuya.low_power_mode) {
-        TuyaNormalPowerModePacketProcess();
-      } else {
-        TuyaLowPowerModePacketProcess();
-      }
-
-      Tuya.byte_counter = 0;
-      Tuya.cmd_status = 0;
-      Tuya.cmd_checksum = 0;
-      Tuya.data_len = 0;
-    }                                                    // read additional packets from TUYA
-    else if (Tuya.byte_counter < TUYA_BUFFER_SIZE -1) {  // add char to string if it still fits
-      Tuya.buffer[Tuya.byte_counter++] = serial_in_byte;
-      Tuya.cmd_checksum += serial_in_byte;
-    } else {
-      Tuya.byte_counter = 0;
-      Tuya.cmd_status = 0;
-      Tuya.cmd_checksum = 0;
-      Tuya.data_len = 0;
     }
+  }
+  ResponseAppend_P(PSTR("}}"));
+
+  if (Settings->flag3.tuya_serial_mqtt_publish) {  // SetOption66 - Enable TuyaMcuReceived messages over Mqtt
+    for (uint8_t cmdsID = 0; cmdsID < sizeof(TuyaExcludeCMDsFromMQTT); cmdsID++) {
+      if (pgm_read_byte(TuyaExcludeCMDsFromMQTT +cmdsID) == Tuya.buffer[3]) {
+        isCmdToSuppress = true;
+        break;
+      }
+    }
+
+    if (!(isCmdToSuppress && Settings->flag5.tuya_exclude_from_mqtt)) {  // SetOption137 - (Tuya) When Set, avoid the (MQTT-) publish of defined Tuya CMDs (see TuyaExcludeCMDsFromMQTT) if SetOption66 is active
+      MqttPublishPrefixTopic_P(RESULT_OR_TELE, PSTR(D_JSON_TUYA_MCU_RECEIVED));
+    } else {
+      AddLog(LOG_LEVEL_DEBUG, ResponseData());
+    }
+  } else {
+    AddLog(LOG_LEVEL_DEBUG, ResponseData());
+  }
+  XdrvRulesProcess(0);
+
+  if (dpId != 0 && Settings->tuyamcu_topic) { // Publish a /STAT Topic ready to use for any home automation system
+    if (!Tuya.SuspendTopic) {
+      char scommand[13];
+      snprintf_P(scommand, sizeof(scommand), PSTR("DpType%uId%u"), dpDataType, dpId);
+      if (dpDataType != 3 && dpDataType != 5) { Response_P(PSTR("%u"), DataVal); }
+      else { Response_P(PSTR("%s"), DataStr); }
+      MqttPublishPrefixTopic_P(STAT, scommand);
+    }
+  }
+
+  if (!Tuya.low_power_mode) {
+    TuyaNormalPowerModePacketProcess();
+  } else {
+    TuyaLowPowerModePacketProcess();
   }
 }
 
-bool TuyaButtonPressed(void)
+void TuyaSerialInput(void)
 {
-  if (!XdrvMailbox.index && ((PRESSED == XdrvMailbox.payload) && (NOT_PRESSED == Button.last_state[XdrvMailbox.index]))) {
+  /*       /-------------------------------- header 55
+   *       |  /----------------------------- header AA
+   *       |  |  /-------------------------- version, always 00
+   *       |  |  |  /----------------------- command byte
+   *       |  |  |  |  /--+----------------- data length in bytes, big endian (high then low)
+   *       |  |  |  |  |  |  /-+-+-+-+------ data bytes
+   *       |  |  |  |  |  |  | | | | |  /--- checksum (sum of all bytes except checksum)
+   *      55 AA 00 cc lh ll dd .... dd xx
+   *       0  1  2  3  4  5  6 ....          index in Tuya buffer
+   *       0  1  2  2  2  2  3 3 3 3 3       Tuya.cmd_status
+   */
+
+  static unsigned long time_last_byte_received = 0;
+
+  while (TuyaSerial->available()) {
+    yield();
+    uint8_t serial_in_byte = TuyaSerial->read();
+    time_last_byte_received = millis();
+    if (Tuya.byte_counter == 0) {
+      if (serial_in_byte == 0x55) {            // Start TUYA Packet
+        Tuya.buffer[Tuya.byte_counter++] = 0x55;
+      }
+    }
+    else if (Tuya.byte_counter == 1) {
+      if (serial_in_byte == 0xAA) { // Only packets with header 0x55AA are valid
+        Tuya.buffer[Tuya.byte_counter++] = 0xAA;
+        Tuya.cmd_checksum = 0xFF;
+      } else {
+        Tuya.byte_counter = 0; // if not received 0xAA right after the 0x55, reset the state machine
+        AddLog(LOG_LEVEL_DEBUG_MORE,PSTR("TYA: 0x55 without 0xAA - resync"));
+      }
+    }
+    else if (Tuya.byte_counter < 6) {
+      Tuya.buffer[Tuya.byte_counter++] = serial_in_byte;
+      Tuya.cmd_checksum += serial_in_byte;
+      if (Tuya.byte_counter == 6) { 
+        // Get length of data, max buffer is 256 bytes, so only taking into account lowest byte of length
+        Tuya.data_len = serial_in_byte + 6;
+      }
+    }
+    else if (Tuya.byte_counter == Tuya.data_len) {
+      Tuya.buffer[Tuya.byte_counter++] = serial_in_byte;
+      if (Tuya.cmd_checksum == serial_in_byte) { // Compare checksum and process packet
+        AddLogBuffer(LOG_LEVEL_DEBUG_MORE,(uint8_t*)Tuya.buffer,Tuya.byte_counter);
+        TuyaProcessMessage();
+      } else {
+        AddLog(LOG_LEVEL_DEBUG_MORE,PSTR("TYA: checksum error: 0x%02X instead of 0x%02X"), serial_in_byte, Tuya.cmd_checksum);
+      }
+      Tuya.byte_counter = 0;
+    }
+    else if (Tuya.byte_counter < TUYA_BUFFER_SIZE -1) {  // add char to string if it still fits
+      Tuya.buffer[Tuya.byte_counter++] = serial_in_byte;
+      Tuya.cmd_checksum += serial_in_byte;
+    } 
+    else { // buffer overflow, reset the state machine
+      Tuya.byte_counter = 0;
+    }
+  }
+  // reset the state machine if no bytes received since a long time
+  if (Tuya.byte_counter > 0 && (millis() - time_last_byte_received) > TUYA_CMD_TIMEOUT) {
+     Tuya.byte_counter = 0;
+     AddLog(LOG_LEVEL_DEBUG_MORE,PSTR("TYA: serial receive timeout"));
+   }
+}
+
+bool TuyaButtonPressed(void) {
+  bool result = false;
+  uint32_t button = XdrvMailbox.payload;
+  if (!XdrvMailbox.index && ((PRESSED == button) && (NOT_PRESSED == Tuya.last_button))) {
     AddLog(LOG_LEVEL_DEBUG, PSTR("TYA: Reset GPIO triggered"));
     TuyaResetWifi();
-    return true;  // Reset GPIO served here
+    result = true;  // Reset GPIO served here
   }
-  return false;   // Don't serve other buttons
+  Tuya.last_button = button;
+  return result;   // Don't serve other buttons
 }
 
 uint8_t TuyaGetTuyaWifiState(void) {
@@ -1404,7 +1448,9 @@ uint8_t TuyaGetTuyaWifiState(void) {
       break;
   }
 
-  if (MqttIsConnected()) {
+  // When Wifi is connected, Say "connected to cloud" if mqtt is disabled or mqtt is connected
+  // avoid MCU to resets ESP to desperately get state 4 while MQTT is not enabled
+  if ((3 == wifi_state) && (!Settings->flag.mqtt_enabled || MqttIsConnected())) {
     wifi_state = 0x04;
   }
 
@@ -1555,7 +1601,7 @@ void TuyaSensorsShow(bool json)
           case 82:
           case 83:
           case 84:
-            WSContentSend_PD(PSTR("{s}Timer%d{m}%d{e}"), (sensor-80), Tuya.Sensors[sensor-71]); // No UoM for timers since they can be sec or min
+            WSContentSend_PD(PSTR("{s}Timer%d{m}%u{e}"), (sensor-80), Tuya.Sensors[sensor-71]); // No UoM for timers since they can be sec or min
             break;
         }
       }
@@ -1581,7 +1627,7 @@ void TuyaAddButton(void) {
     char stemp[33];
     snprintf_P(stemp, sizeof(stemp), PSTR("" D_JSON_IRHVAC_MODE ""));
     WSContentSend_P(HTTP_DEVICE_CONTROL, 26, TasmotaGlobal.devices_present + 1,
-      (strlen(SettingsText(SET_BUTTON1 + TasmotaGlobal.devices_present))) ? SettingsText(SET_BUTTON1 + TasmotaGlobal.devices_present) : stemp, "");
+      (strlen(GetWebButton(TasmotaGlobal.devices_present))) ? HtmlEscape(GetWebButton(TasmotaGlobal.devices_present)).c_str() : stemp, "");
     WSContentSend_P(PSTR("</tr></table>"));
   }
 }
@@ -1602,10 +1648,10 @@ bool Xnrg32(uint32_t function)
     if (FUNC_PRE_INIT == function) {
       if (TuyaGetDpId(TUYA_MCU_FUNC_POWER) != 0 || TuyaGetDpId(TUYA_MCU_FUNC_POWER_COMBINED) != 0) {
         if (TuyaGetDpId(TUYA_MCU_FUNC_CURRENT) == 0 && TuyaGetDpId(TUYA_MCU_FUNC_POWER_COMBINED) == 0) {
-          Energy.current_available = false;
+          Energy->current_available = false;
         }
         if (TuyaGetDpId(TUYA_MCU_FUNC_VOLTAGE) == 0 && TuyaGetDpId(TUYA_MCU_FUNC_POWER_COMBINED) == 0) {
-          Energy.voltage_available = false;
+          Energy->voltage_available = false;
         }
         TasmotaGlobal.energy_driver = XNRG_32;
       }
@@ -1621,6 +1667,7 @@ bool Xdrv16(uint32_t function) {
   if (FUNC_MODULE_INIT == function) {
     result = TuyaModuleSelected();
     Tuya.active = result;
+    AddLog(LOG_LEVEL_DEBUG,PSTR("TYA: Active=%d"),Tuya.active);
   }
   else if (Tuya.active) {
     switch (function) {
@@ -1638,6 +1685,12 @@ bool Xdrv16(uint32_t function) {
         result = TuyaButtonPressed();
         break;
       case FUNC_EVERY_SECOND:
+        if (Tuya.time_last_cmd) {
+          if ((millis()-Tuya.time_last_cmd) < TUYA_CMD_TIMEOUT)
+            break; // don't send anything if we are already waiting for an answer
+          else
+            Tuya.time_last_cmd = 0;
+        }
         if (TuyaSerial && Tuya.wifi_state != TuyaGetTuyaWifiState()) { TuyaSetWifiLed(); }
         if (!Tuya.low_power_mode) {
           Tuya.heartbeat_timer++;
@@ -1675,6 +1728,9 @@ bool Xdrv16(uint32_t function) {
         TuyaSensorsShow(0);
         break;
 #endif  // USE_WEBSERVER
+      case FUNC_ACTIVE:
+        result = true;
+        break;
     }
   }
   return result;

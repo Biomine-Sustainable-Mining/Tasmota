@@ -35,6 +35,8 @@ extern FS *ffsp;
 
 #undef GT911_address
 #define GT911_address 0x5D
+#undef CST816S_address
+#define CST816S_address 0x15
 
 enum {GPIO_DP_RES=GPIO_SENSOR_END-1,GPIO_DP_CS,GPIO_DP_RS,GPIO_DP_WR,GPIO_DP_RD,GPIO_DPAR0,GPIO_DPAR1,GPIO_DPAR2,GPIO_DPAR3,GPIO_DPAR4,GPIO_DPAR5,GPIO_DPAR6,GPIO_DPAR7,GPIO_DPAR8,GPIO_DPAR9,GPIO_DPAR10,GPIO_DPAR11,GPIO_DPAR12,GPIO_DPAR13,GPIO_DPAR14,GPIO_DPAR15};
 
@@ -175,11 +177,15 @@ int8_t cs;
       replacepin(&cp, Pin(GPIO_OLED_RESET));
 
       if (wire_n == 1) {
-        I2cBegin(sda, scl);
+        if (!TasmotaGlobal.i2c_enabled) {
+          I2cBegin(sda, scl);
+        }
       }
 #ifdef ESP32
       if (wire_n == 2) {
-        I2c2Begin(sda, scl);
+        if (!TasmotaGlobal.i2c_enabled_2) {
+          I2c2Begin(sda, scl);
+        }
       }
       if (I2cSetDevice(i2caddr, wire_n - 1)) {
         I2cSetActiveFound(i2caddr, "DSP-I2C", wire_n - 1);
@@ -238,6 +244,29 @@ int8_t cs;
         replacepin(&cp, Pin(GPIO_BACKLIGHT));
         replacepin(&cp, Pin(GPIO_OLED_RESET));
         replacepin(&cp, Pin(GPIO_SSPI_MISO));
+      }
+    }
+
+    cp = strstr(ddesc, ":UTI");
+    if (cp) {
+      cp += 4;                  // skip ":UTI"
+      cp = strchr(cp, ',');     // skip device name
+      cp++;
+      cp = strchr(cp, ',');
+      cp++;
+      if (*cp == 'I') {           // I= I2C
+        cp = strchr(cp, ',');     // skip interface type
+        cp++;
+        cp = strchr(cp, ',');     // skip I2C bus number
+        cp++;
+        replacepin(&cp, Pin(GPIO_TS_RST));
+        replacepin(&cp, Pin(GPIO_TS_IRQ));
+      } else if (*cp == 'S') {    // S= SPI
+        cp = strchr(cp, ',');     // skip interface type
+        cp++;
+        replacepin(&cp, Pin(GPIO_TS_SPI_CS));
+        replacepin(&cp, Pin(GPIO_TS_RST));
+        replacepin(&cp, Pin(GPIO_TS_IRQ));
       }
     }
 
@@ -308,7 +337,7 @@ int8_t cs;
     udisp  = new uDisplay(ddesc);
 
     // checck for touch option TI1 or TI2
-#if defined(USE_FT5206) || defined(USE_GT911)
+#if defined (USE_CST816S) || defined(USE_FT5206) || defined(USE_GT911)
     cp = strstr(ddesc, ":TI");
     if (cp) {
       uint8_t wire_n = 1;
@@ -333,15 +362,21 @@ int8_t cs;
       }
 
       if (wire_n == 0) {
-        I2cBegin(sda, scl);
+        if (!TasmotaGlobal.i2c_enabled) {
+          I2cBegin(sda, scl);
+        }
       }
 #ifdef ESP32
       if (wire_n == 1) {
-        I2c2Begin(sda, scl, 400000);
+        if (!TasmotaGlobal.i2c_enabled_2) {
+          I2c2Begin(sda, scl, 400000);
+        }
       }
       if (I2cSetDevice(i2caddr, wire_n)) {
         if (i2caddr == GT911_address) {
           I2cSetActiveFound(i2caddr, "GT911", wire_n);
+        } else if (i2caddr == CST816S_address) {
+          I2cSetActiveFound(i2caddr, "CST816S", wire_n);
         } else {
           I2cSetActiveFound(i2caddr, "FT5206", wire_n);
         }
@@ -353,6 +388,8 @@ int8_t cs;
       if (I2cSetDevice(i2caddr)) {
         if (i2caddr == GT911_address) {
           I2cSetActiveFound(i2caddr, "GT911");
+        } else if (i2caddr == CST816S_address) {
+          I2cSetActiveFound(i2caddr, "CST816S");
         } else {
           I2cSetActiveFound(i2caddr, "FT5206");
         }
@@ -360,11 +397,16 @@ int8_t cs;
 #endif // ESP8266
 
       // start digitizer
+
 #ifdef ESP32
       if (i2caddr == GT911_address) {
 #ifdef USE_GT911
         if (!wire_n) GT911_Touch_Init(&Wire, irq, rst, xs, ys);
         else GT911_Touch_Init(&Wire1, irq, rst, xs, ys);
+#endif
+      } else if (i2caddr == CST816S_address) {
+#ifdef USE_CST816S
+        CST816S_Touch_Init(wire_n, irq, rst);
 #endif
       } else {
 #ifdef USE_FT5206
@@ -379,6 +421,10 @@ int8_t cs;
 #ifdef USE_GT911
       if (!wire_n) GT911_Touch_Init(&Wire, irq, rst, xs, ys);
 #endif
+      } else if (i2caddr == CST816S_address) {
+#ifdef USE_CST816S
+      CST816S_Touch_Init(wire_n, irq, rst);
+#endif
       } else {
 #ifdef USE_FT5206
       if (!wire_n) FT5206_Touch_Init(Wire);
@@ -392,9 +438,19 @@ int8_t cs;
 #ifdef USE_XPT2046
     cp = strstr(ddesc, ":TS,");
     if (cp) {
-      cp+=4;
+      cp += 4;
       uint8_t touch_cs = replacepin(&cp, Pin(GPIO_XPT2046_CS));
-	    XPT2046_Touch_Init(touch_cs);
+      int8_t irqpin = -1;
+      if (*(cp - 1) == ',') {
+        irqpin = strtol(cp, &cp, 10);
+      }
+      uint8_t bus = 1;
+      if (*cp == ',') {
+        cp++;
+        bus = strtol(cp, &cp, 10);
+        if (bus < 1) bus = 1;
+      }
+	    XPT2046_Touch_Init(touch_cs, irqpin, bus - 1);
     }
 #endif // USE_XPT2046
 
@@ -426,15 +482,24 @@ int8_t cs;
     bg_color = renderer->bgcol();
     color_type = renderer->color_type();
 
-#ifdef USE_M5STACK_CORE2
-    renderer->SetPwrCB(Core2DisplayPower);
-    renderer->SetDimCB(Core2DisplayDim);
-#endif // USE_M5STACK_CORE2
-
     renderer->DisplayInit(DISPLAY_INIT_MODE, Settings->display_size, inirot, Settings->display_font);
 
     Settings->display_width = renderer->width();
     Settings->display_height = renderer->height();
+
+#ifdef USE_UNIVERSAL_TOUCH
+    utouch_Touch_Init();
+#endif
+
+    bool iniinv = Settings->display_options.invert;
+    /*
+    cp = strstr(ddesc, ":n,");
+    if (cp) {
+      cp+=3;
+      iniinv = strtol(cp, &cp, 10);
+      Settings->display_options.invert = iniinv;
+    }*/
+    renderer->invertDisplay(iniinv);
 
     ApplyDisplayDimmer();
 
@@ -454,7 +519,7 @@ int8_t cs;
 
 /*********************************************************************************************/
 
-int8_t replacepin(char **cp, uint16_t pin) {
+int8_t replacepin(char **cp, int16_t pin) {
   int8_t res = 0;
   char *lp = *cp;
   if (*lp == ',') lp++;

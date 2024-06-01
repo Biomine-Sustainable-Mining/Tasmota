@@ -98,7 +98,7 @@
  * GPIO32 - Blue status led2
  * GPIO33 - Yellow error led3
  * GPIO35 - Button
- * #define ETH_TYPE          ETH_PHY_LAN8720
+ * #define ETH_TYPE          0        // LAN8720
  * #define ETH_CLKMODE       ETH_CLOCK_GPIO17_OUT
  * #define ETH_ADDRESS       0
  *
@@ -308,9 +308,9 @@ TSspm *Sspm = nullptr;
  * Driver Settings load and save using filesystem
 \*********************************************************************************************/
 
-const uint32_t XDRV_86_VERSION = 0x0104;              // Latest driver version (See settings deltas below)
+const uint16_t XDRV_86_VERSION = 0x0104;              // Latest driver version (See settings deltas below)
 
-void Xdrv86SettingsLoad(void) {
+void Xdrv86SettingsLoad(bool erase) {
   // *** Start init default values in case file is not found ***
   memset(&Sspm->Settings, 0x00, sizeof(tSspmSettings));
   Sspm->Settings.version = XDRV_86_VERSION;
@@ -326,7 +326,10 @@ void Xdrv86SettingsLoad(void) {
   char filename[20];
   // Use for drivers:
   snprintf_P(filename, sizeof(filename), PSTR(TASM_FILE_DRIVER), XDRV_86);
-  if (TfsLoadFile(filename, (uint8_t*)&Sspm->Settings, sizeof(tSspmSettings))) {
+  if (erase) {
+    TfsDeleteFile(filename);  // Use defaults
+  }
+  else if (TfsLoadFile(filename, (uint8_t*)&Sspm->Settings, sizeof(tSspmSettings))) {
     if (Sspm->Settings.version != XDRV_86_VERSION) {      // Fix version dependent changes
 
       // *** Start fix possible setting deltas ***
@@ -341,7 +344,8 @@ void Xdrv86SettingsLoad(void) {
       Xdrv86SettingsSave();
     }
     AddLog(LOG_LEVEL_INFO, PSTR("CFG: XDRV86 loaded from file"));
-  } else {
+  }
+  else {
     // File system not ready: No flash space reserved for file system
     AddLog(LOG_LEVEL_DEBUG, PSTR("CFG: XDRV86 Use defaults as file system not ready or file not found"));
   }
@@ -367,6 +371,12 @@ void Xdrv86SettingsSave(void) {
     }
   }
 #endif  // USE_UFILESYS
+}
+
+bool Xdrv86SettingsRestore(void) {
+  XdrvMailbox.data = (char*)&Sspm->Settings;
+  XdrvMailbox.index = sizeof(tSspmSettings);
+  return true;
 }
 
 /*********************************************************************************************/
@@ -1195,7 +1205,7 @@ void SSPMHandleReceivedData(void) {
           TasmotaGlobal.power |= current_state;
 
           Sspm->old_power = TasmotaGlobal.power;
-          TasmotaGlobal.devices_present += 4;
+          UpdateDevicesPresent(4);
         }
         SSPMSendGetOps(Sspm->module_selected -1);
         break;
@@ -1907,7 +1917,12 @@ void SSPMInit(void) {
     return;
   }
 
-  Xdrv86SettingsLoad();
+  if (SspmSerial->hardwareSerial()) {
+    ClaimSerial();
+  }
+  AddLog(LOG_LEVEL_DEBUG, PSTR("SPM: Serial UART%d"), SspmSerial->getUart());
+
+  Xdrv86SettingsLoad(0);
 
   pinMode(SSPM_GPIO_ARM_RESET, OUTPUT);
   digitalWrite(SSPM_GPIO_ARM_RESET, 1);
@@ -1931,7 +1946,7 @@ void SSPMInit(void) {
 #if CONFIG_IDF_TARGET_ESP32
 #ifdef USE_ETHERNET
   Settings->eth_address = 0;                      // EthAddress
-  Settings->eth_type = ETH_PHY_LAN8720;           // EthType
+  Settings->eth_type = 0;                         // EthType LAN8720
   Settings->eth_clk_mode = ETH_CLOCK_GPIO17_OUT;  // EthClockMode
 #endif
 #endif
@@ -2268,7 +2283,7 @@ void SSPMEnergyShow(bool json) {
       uint32_t offset = (Sspm->rotate >> 2) * 4;
       uint32_t count = relay_show - offset;
       if (count > 4) { count = 4; }
-      WSContentSend_P(PSTR("</table><hr/>"));        // Close current table as we will use different column count
+      WSContentSend_P(PSTR("</table>"));             // Close current table as we will use different column count
       if (SPM_DISPLAY_TABS == Sspm->Settings.flag.display) {
         uint32_t modules = relay_show / 4;
         if (modules > 1) {
@@ -2296,15 +2311,13 @@ void SSPMEnergyShow(bool json) {
       WSContentSend_PD(HTTP_SNS_VOLTAGE, SSPMEnergyFormat(value_chr, Sspm->voltage[0], Settings->flag2.voltage_resolution, indirect, offset, count));
       WSContentSend_PD(HTTP_SNS_CURRENT, SSPMEnergyFormat(value_chr, Sspm->current[0], Settings->flag2.current_resolution, indirect, offset, count));
       WSContentSend_PD(HTTP_SNS_POWER,   SSPMEnergyFormat(value_chr, Sspm->active_power[0], Settings->flag2.wattage_resolution, indirect, offset, count));
-      char valu2_chr[SSPM_SIZE];
-      char valu3_chr[SSPM_SIZE];
-      WSContentSend_PD(HTTP_ENERGY_SNS1, SSPMEnergyFormat(value_chr, Sspm->apparent_power[0], Settings->flag2.wattage_resolution, indirect, offset, count),
-                                         SSPMEnergyFormat(valu2_chr, Sspm->reactive_power[0], Settings->flag2.wattage_resolution, indirect, offset, count),
-                                         SSPMEnergyFormat(valu3_chr, Sspm->power_factor[0], 2, indirect, offset, count));
-      WSContentSend_PD(HTTP_ENERGY_SNS2, SSPMEnergyFormat(value_chr, Sspm->energy_today[0], Settings->flag2.energy_resolution, indirect, offset, count),
-                                         SSPMEnergyFormat(valu2_chr, Sspm->Settings.energy_yesterday[0], Settings->flag2.energy_resolution, indirect, offset, count),
-                                         SSPMEnergyFormat(valu3_chr, Sspm->energy_total[0], Settings->flag2.energy_resolution, indirect, offset, count));
-      WSContentSend_P(PSTR("</table><hr/>{t}"));    // {t} = <table style='width:100%'> - Define for next FUNC_WEB_SENSOR
+      WSContentSend_PD(HTTP_SNS_POWERUSAGE_APPARENT, SSPMEnergyFormat(value_chr, Sspm->apparent_power[0], Settings->flag2.wattage_resolution, indirect, offset, count));
+      WSContentSend_PD(HTTP_SNS_POWERUSAGE_REACTIVE, SSPMEnergyFormat(value_chr, Sspm->reactive_power[0], Settings->flag2.wattage_resolution, indirect, offset, count));
+      WSContentSend_PD(HTTP_SNS_POWER_FACTOR, SSPMEnergyFormat(value_chr, Sspm->power_factor[0], 2, indirect, offset, count));
+      WSContentSend_PD(HTTP_SNS_ENERGY_TODAY, SSPMEnergyFormat(value_chr, Sspm->energy_today[0], Settings->flag2.energy_resolution, indirect, offset, count));
+      WSContentSend_PD(HTTP_SNS_ENERGY_YESTERDAY, SSPMEnergyFormat(value_chr, Sspm->Settings.energy_yesterday[0], Settings->flag2.energy_resolution, indirect, offset, count));
+      WSContentSend_PD(HTTP_SNS_ENERGY_TOTAL, SSPMEnergyFormat(value_chr, Sspm->energy_total[0], Settings->flag2.energy_resolution, indirect, offset, count));
+      WSContentSend_P(PSTR("</table>{t}"));    // {t} = <table style='width:100%'> - Define for next FUNC_WEB_SENSOR
     }
 #endif  // USE_WEBSERVER
   }
@@ -2645,6 +2658,12 @@ bool Xdrv86(uint32_t function) {
       case FUNC_EVERY_100_MSECOND:
         SSPMEvery100ms();
         break;
+      case FUNC_RESET_SETTINGS:
+        Xdrv86SettingsLoad(1);
+        break;
+      case FUNC_RESTORE_SETTINGS:
+        result = Xdrv86SettingsRestore();
+        break;
       case FUNC_SAVE_SETTINGS:
         Xdrv86SettingsSave();
         break;
@@ -2667,6 +2686,9 @@ bool Xdrv86(uint32_t function) {
         break;
       case FUNC_BUTTON_PRESSED:
         result = SSPMButton();
+        break;
+      case FUNC_ACTIVE:
+        result = true;
         break;
     }
   }

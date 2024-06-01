@@ -17,12 +17,18 @@
   along with this program.  If not, see <http://www.gnu.org/licenses/>.
 */
 
+#ifndef FIRMWARE_MINIMAL
+
 #ifdef USE_ADC
 /*********************************************************************************************\
  * ADC support for ESP8266 GPIO17 (=PIN_A0) and ESP32 up to 8 channels on GPIO32 to GPIO39
 \*********************************************************************************************/
 
 #define XSNS_02                       2
+
+#ifdef ESP32
+#include "esp32-hal-adc.h"
+#endif
 
 #ifdef ESP8266
 #define ANALOG_RESOLUTION             10               // 12 = 4095, 11 = 2047, 10 = 1023
@@ -171,11 +177,13 @@ struct {
   int indexOfPointer = -1;
 } Adc[MAX_ADCS];
 
-#ifdef ESP8266
 bool adcAttachPin(uint8_t pin) {
+#ifdef ESP8266
   return (ADC0_PIN == pin);
+#else  // ESP32
+  return true;
+#endif  // ESP32  
 }
-#endif
 
 void AdcSaveSettings(uint32_t idx) {
   char parameters[32];
@@ -297,7 +305,6 @@ void AdcInit(void) {
 
   if (Adcs.present) {
 #ifdef ESP32
-    analogSetClockDiv(1);               // Default 1
 #if CONFIG_IDF_TARGET_ESP32
     analogSetWidth(ANALOG_RESOLUTION);  // Default 12 bits (0 - 4095)
 #endif  // CONFIG_IDF_TARGET_ESP32
@@ -311,19 +318,49 @@ void AdcInit(void) {
   }
 }
 
+uint32_t AdcRange(void) {
+  return ANALOG_RANGE;
+}
+
+bool AdcPin(uint32_t pin) {
+  for (uint32_t idx = 0; idx < Adcs.present; idx++) {
+    if (pin == Adc[idx].pin) {
+      return true;
+    }
+  }
+  return false;
+}
+
+uint16_t AdcRead1(uint32_t pin) {
+#ifdef ESP32 
+  return analogReadMilliVolts(pin) / (ANALOG_V33*1000) * ANALOG_RANGE; // go back from mV to ADC
+#else
+  return analogRead(pin);
+#endif
+}
+
 uint16_t AdcRead(uint32_t pin, uint32_t factor) {
   // factor 1 = 2 samples
   // factor 2 = 4 samples
   // factor 3 = 8 samples
   // factor 4 = 16 samples
   // factor 5 = 32 samples
+  SystemBusyDelayExecute();
+
   uint32_t samples = 1 << factor;
   uint32_t analog = 0;
   for (uint32_t i = 0; i < samples; i++) {
+#ifdef ESP32 
+    analog += analogReadMilliVolts(pin);  // get the value corrected by calibrated values from the eFuses
+#else
     analog += analogRead(pin);
+#endif
     delay(1);
   }
   analog >>= factor;
+#ifdef ESP32
+  analog = analog/(ANALOG_V33*1000) * ANALOG_RANGE; // go back from mV to ADC
+#endif
   return analog;
 }
 
@@ -452,7 +489,7 @@ float AdcGetRange(uint32_t idx) {
   // formula for calibration: value, fromLow, fromHigh, toLow, toHigh
   // Example: 514, 632, 236, 0, 100
   // int( ((<param2> - <analog-value>) / (<param2> - <param1>) ) * (<param3> - <param4>) ) + <param4> )
-  int adc = AdcRead(Adc[idx].pin, 2);
+  int adc = AdcRead(Adc[idx].pin, 5);
   double adcrange = ( ((double)Adc[idx].param2 - (double)adc) / ( ((double)Adc[idx].param2 - (double)Adc[idx].param1)) * ((double)Adc[idx].param3 - (double)Adc[idx].param4) + (double)Adc[idx].param4 );
   return (float)adcrange;
 }
@@ -469,7 +506,8 @@ void AdcGetCurrentPower(uint8_t idx, uint8_t factor) {
   uint16_t analog_max = 0;
 
   if (0 == Adc[idx].param1) {
-    for (uint32_t i = 0; i < samples; i++) {
+    unsigned long tstart=millis();
+    while (millis()-tstart < 35) {
       analog = analogRead(Adc[idx].pin);
       if (analog < analog_min) {
         analog_min = analog;
@@ -477,9 +515,11 @@ void AdcGetCurrentPower(uint8_t idx, uint8_t factor) {
       if (analog > analog_max) {
         analog_max = analog;
       }
-      delay(1);
     }
+    //AddLog(0, PSTR("min: %u, max:%u, dif:%u"), analog_min, analog_max, analog_max-analog_min);
     Adc[idx].current = (float)(analog_max-analog_min) * ((float)(Adc[idx].param2) / 100000);
+    if (Adc[idx].current < (((float)Adc[idx].param4) / 10000.0))
+        Adc[idx].current = 0.0;
   }
   else {
     analog = AdcRead(Adc[idx].pin, 5);
@@ -834,7 +874,13 @@ void CmndAdcParam(void) {
       }
       char param3[FLOATSZ];
       dtostrfd(((double)Adc[idx].param3)/10000, precision, param3);
-      ResponseAppend_P(PSTR(",%s,%d"), param3, Adc[idx].param4);
+      if (ADC_CT_POWER == Adc[idx].type) {
+        char param4[FLOATSZ];
+        dtostrfd(((double)Adc[idx].param4)/10000, 3, param4);
+        ResponseAppend_P(PSTR(",%s,%s"), param3, param4);
+      } else {
+        ResponseAppend_P(PSTR(",%s,%d"), param3, Adc[idx].param4);
+      }
     }
     ResponseAppend_P(PSTR("]}"));
   }
@@ -851,7 +897,7 @@ bool Xsns02(uint32_t function) {
     case FUNC_COMMAND:
       result = DecodeCommand(kAdcCommands, AdcCommand);
       break;
-    case FUNC_MODULE_INIT:
+    case FUNC_SETUP_RING2:
       AdcInit();
       break;
     default:
@@ -880,3 +926,4 @@ bool Xsns02(uint32_t function) {
 }
 
 #endif  // USE_ADC
+#endif  // FIRMWARE_MINIMAL

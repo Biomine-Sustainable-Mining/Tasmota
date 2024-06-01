@@ -85,7 +85,7 @@ struct Tm1621 {
  * Driver Settings load and save using filesystem
 \*********************************************************************************************/
 
-const uint32_t XDRV_87_VERSION = 0x0104;          // Latest driver version (See settings deltas below)
+const uint16_t XDRV_87_VERSION = 0x0104;          // Latest driver version (See settings deltas below)
 
 typedef struct {
   uint32_t crc32;                                 // To detect file changes
@@ -99,7 +99,7 @@ tXdrv87Settings Xdrv87Settings;
 
 /*********************************************************************************************/
 
-void Xdrv87SettingsLoad(void) {
+void Xdrv87SettingsLoad(bool erase) {
   // *** Start init default values in case file is not found ***
   memset(&Xdrv87Settings, 0x00, sizeof(tXdrv87Settings));
   Xdrv87Settings.version = XDRV_87_VERSION;
@@ -115,7 +115,10 @@ void Xdrv87SettingsLoad(void) {
   char filename[20];
   // Use for drivers:
   snprintf_P(filename, sizeof(filename), PSTR(TASM_FILE_DRIVER), XDRV_87);
-  if (TfsLoadFile(filename, (uint8_t*)&Xdrv87Settings, sizeof(tXdrv87Settings))) {
+  if (erase) {
+    TfsDeleteFile(filename);  // Use defaults
+  }
+  else if (TfsLoadFile(filename, (uint8_t*)&Xdrv87Settings, sizeof(tXdrv87Settings))) {
     if (Xdrv87Settings.version != XDRV_87_VERSION) {      // Fix version dependent changes
 
       // *** Start fix possible setting deltas ***
@@ -130,7 +133,8 @@ void Xdrv87SettingsLoad(void) {
       Xdrv87SettingsSave();
     }
     AddLog(LOG_LEVEL_INFO, PSTR("CFG: XDRV87 loaded from file"));
-  } else {
+  }
+  else {
     // File system not ready: No flash space reserved for file system
     AddLog(LOG_LEVEL_DEBUG, PSTR("CFG: XDRV87 Use defaults as file system not ready or file not found"));
   }
@@ -156,6 +160,12 @@ void Xdrv87SettingsSave(void) {
     }
   }
 #endif  // USE_UFILESYS
+}
+
+bool Xdrv87SettingsRestore(void) {
+  XdrvMailbox.data = (char*)&Xdrv87Settings;
+  XdrvMailbox.index = sizeof(tXdrv87Settings);
+  return true;
 }
 
 /*********************************************************************************************/
@@ -298,7 +308,7 @@ void TM1621PreInit(void) {
   pinMode(Tm1621.pin_wr, OUTPUT);
   digitalWrite(Tm1621.pin_wr, 1);
 
-  Xdrv87SettingsLoad();
+  Xdrv87SettingsLoad(0);
 
   Tm1621.state = 200;
 
@@ -427,21 +437,23 @@ void TM1621Show(void) {
     return;
   }
 
+#ifdef USE_ENERGY_SENSOR
   if (TM1621_POWR316D == Tm1621.device) {
     if (0 == Tm1621.display_rotate) {
-      ext_snprintf_P(Tm1621.row[0], sizeof(Tm1621.row[0]), PSTR("%1_f"), &Energy.voltage[0]);
-      ext_snprintf_P(Tm1621.row[1], sizeof(Tm1621.row[1]), PSTR("%1_f"), &Energy.current[0]);
+      ext_snprintf_P(Tm1621.row[0], sizeof(Tm1621.row[0]), PSTR("%1_f"), &Energy->voltage[0]);
+      ext_snprintf_P(Tm1621.row[1], sizeof(Tm1621.row[1]), PSTR("%1_f"), &Energy->current[0]);
       Tm1621.voltage = true;
       Tm1621.display_rotate = 1;
     } else {
-      ext_snprintf_P(Tm1621.row[0], sizeof(Tm1621.row[0]), PSTR("%1_f"), &Energy.total[0]);
-      ext_snprintf_P(Tm1621.row[1], sizeof(Tm1621.row[1]), PSTR("%1_f"), &Energy.active_power[0]);
+      ext_snprintf_P(Tm1621.row[0], sizeof(Tm1621.row[0]), PSTR("%1_f"), &Energy->total[0]);
+      ext_snprintf_P(Tm1621.row[1], sizeof(Tm1621.row[1]), PSTR("%1_f"), &Energy->active_power[0]);
       Tm1621.kwh = true;
       Tm1621.display_rotate = 0;
     }
     TM1621SendRows();
     return;
   }
+#endif  // USE_ENERGY_SENSOR
 
   if (TM1621_THR316D == Tm1621.device) {
     if (!isnan(TasmotaGlobal.temperature_celsius)) {
@@ -578,11 +590,20 @@ bool Xdrv87(uint32_t function) {
       case FUNC_EVERY_SECOND:
         TM1621EverySecond();
         break;
+      case FUNC_RESET_SETTINGS:
+        Xdrv87SettingsLoad(1);
+        break;
+      case FUNC_RESTORE_SETTINGS:
+        result = Xdrv87SettingsRestore();
+        break;
       case FUNC_SAVE_SETTINGS:
         Xdrv87SettingsSave();
         break;
       case FUNC_COMMAND:
         result = DecodeCommand(kTm1621Commands, kTm1621Command);
+        break;
+      case FUNC_ACTIVE:
+        result = true;
         break;
     }
   }

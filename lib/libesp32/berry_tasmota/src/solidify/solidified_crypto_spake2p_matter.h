@@ -9,7 +9,8 @@ extern const bclass be_class_SPAKE2P_Matter;
 /********************************************************************
 ** Solidified function: compute_pB
 ********************************************************************/
-be_local_closure(SPAKE2P_Matter_compute_pB,   /* name */
+extern const bclass be_class_SPAKE2P_Matter;
+be_local_closure(class_SPAKE2P_Matter_compute_pB,   /* name */
   be_nested_proto(
     10,                          /* nstack */
     2,                          /* argc */
@@ -17,7 +18,7 @@ be_local_closure(SPAKE2P_Matter_compute_pB,   /* name */
     0,                          /* has upvals */
     NULL,                       /* no upvals */
     0,                          /* has sup protos */
-    NULL,                       /* no sub protos */
+    &be_class_SPAKE2P_Matter, 
     1,                          /* has constants */
     ( &(const bvalue[ 9]) {     /* constants */
     /* K0   */  be_nested_str_weak(crypto),
@@ -68,7 +69,8 @@ extern const bclass be_class_SPAKE_Hasher;
 /********************************************************************
 ** Solidified function: init
 ********************************************************************/
-be_local_closure(SPAKE_Hasher_init,   /* name */
+extern const bclass be_class_SPAKE_Hasher;
+be_local_closure(class_SPAKE_Hasher_init,   /* name */
   be_nested_proto(
     4,                          /* nstack */
     1,                          /* argc */
@@ -76,7 +78,7 @@ be_local_closure(SPAKE_Hasher_init,   /* name */
     0,                          /* has upvals */
     NULL,                       /* no upvals */
     0,                          /* has sup protos */
-    NULL,                       /* no sub protos */
+    &be_class_SPAKE_Hasher, 
     1,                          /* has constants */
     ( &(const bvalue[ 3]) {     /* constants */
     /* K0   */  be_nested_str_weak(crypto),
@@ -100,7 +102,8 @@ be_local_closure(SPAKE_Hasher_init,   /* name */
 /********************************************************************
 ** Solidified function: add_item
 ********************************************************************/
-be_local_closure(SPAKE_Hasher_add_item,   /* name */
+extern const bclass be_class_SPAKE_Hasher;
+be_local_closure(class_SPAKE_Hasher_add_item,   /* name */
   be_nested_proto(
     7,                          /* nstack */
     2,                          /* argc */
@@ -108,7 +111,7 @@ be_local_closure(SPAKE_Hasher_add_item,   /* name */
     0,                          /* has upvals */
     NULL,                       /* no upvals */
     0,                          /* has sup protos */
-    NULL,                       /* no sub protos */
+    &be_class_SPAKE_Hasher, 
     1,                          /* has constants */
     ( &(const bvalue[ 5]) {     /* constants */
     /* K0   */  be_nested_str_weak(size),
@@ -150,7 +153,8 @@ be_local_closure(SPAKE_Hasher_add_item,   /* name */
 /********************************************************************
 ** Solidified function: out
 ********************************************************************/
-be_local_closure(SPAKE_Hasher_out,   /* name */
+extern const bclass be_class_SPAKE_Hasher;
+be_local_closure(class_SPAKE_Hasher_out,   /* name */
   be_nested_proto(
     3,                          /* nstack */
     1,                          /* argc */
@@ -158,7 +162,7 @@ be_local_closure(SPAKE_Hasher_out,   /* name */
     0,                          /* has upvals */
     NULL,                       /* no upvals */
     0,                          /* has sup protos */
-    NULL,                       /* no sub protos */
+    &be_class_SPAKE_Hasher, 
     1,                          /* has constants */
     ( &(const bvalue[ 2]) {     /* constants */
     /* K0   */  be_nested_str_weak(hash),
@@ -185,10 +189,10 @@ be_local_class(SPAKE_Hasher,
     NULL,
     be_nested_map(4,
     ( (struct bmapnode*) &(const bmapnode[]) {
-        { be_const_key_weak(out, -1), be_const_closure(SPAKE_Hasher_out_closure) },
+        { be_const_key_weak(out, -1), be_const_closure(class_SPAKE_Hasher_out_closure) },
         { be_const_key_weak(hash, -1), be_const_var(0) },
-        { be_const_key_weak(add_item, -1), be_const_closure(SPAKE_Hasher_add_item_closure) },
-        { be_const_key_weak(init, 0), be_const_closure(SPAKE_Hasher_init_closure) },
+        { be_const_key_weak(add_item, -1), be_const_closure(class_SPAKE_Hasher_add_item_closure) },
+        { be_const_key_weak(init, 0), be_const_closure(class_SPAKE_Hasher_init_closure) },
     })),
     be_str_weak(SPAKE_Hasher)
 );
@@ -196,7 +200,8 @@ be_local_class(SPAKE_Hasher,
 /********************************************************************
 ** Solidified function: compute_TT_hash
 ********************************************************************/
-be_local_closure(SPAKE2P_Matter_compute_TT_hash,   /* name */
+extern const bclass be_class_SPAKE2P_Matter;
+be_local_closure(class_SPAKE2P_Matter_compute_TT_hash,   /* name */
   be_nested_proto(
     14,                          /* nstack */
     2,                          /* argc */
@@ -204,7 +209,7 @@ be_local_closure(SPAKE2P_Matter_compute_TT_hash,   /* name */
     0,                          /* has upvals */
     NULL,                       /* no upvals */
     0,                          /* has sup protos */
-    NULL,                       /* no sub protos */
+    &be_class_SPAKE2P_Matter, 
     1,                          /* has constants */
     ( &(const bvalue[29]) {     /* constants */
     /* K0   */  be_const_class(be_class_SPAKE_Hasher),
@@ -239,121 +244,122 @@ be_local_closure(SPAKE2P_Matter_compute_TT_hash,   /* name */
     }),
     be_str_weak(compute_TT_hash),
     &be_const_str_solidified,
-    ( &(const binstruction[114]) {  /* code */
+    ( &(const binstruction[115]) {  /* code */
       0x58080000,  //  0000  LDCONST	R2	K0
       0xB4000000,  //  0001  CLASS	K0
-      0xA40E0200,  //  0002  IMPORT	R3	K1
-      0x5C100400,  //  0003  MOVE	R4	R2
-      0x7C100000,  //  0004  CALL	R4	0
-      0x8C140902,  //  0005  GETMET	R5	R4	K2
-      0x881C0103,  //  0006  GETMBR	R7	R0	K3
-      0x7C140400,  //  0007  CALL	R5	2
-      0x8C140902,  //  0008  GETMET	R5	R4	K2
-      0x881C0104,  //  0009  GETMBR	R7	R0	K4
-      0x7C140400,  //  000A  CALL	R5	2
-      0x8C140902,  //  000B  GETMET	R5	R4	K2
-      0x881C0105,  //  000C  GETMBR	R7	R0	K5
-      0x7C140400,  //  000D  CALL	R5	2
-      0x8C140902,  //  000E  GETMET	R5	R4	K2
-      0x881C0106,  //  000F  GETMBR	R7	R0	K6
-      0x7C140400,  //  0010  CALL	R5	2
-      0x8C140902,  //  0011  GETMET	R5	R4	K2
-      0x881C0107,  //  0012  GETMBR	R7	R0	K7
-      0x7C140400,  //  0013  CALL	R5	2
-      0x8C140902,  //  0014  GETMET	R5	R4	K2
-      0x881C0108,  //  0015  GETMBR	R7	R0	K8
-      0x7C140400,  //  0016  CALL	R5	2
-      0x8C140902,  //  0017  GETMET	R5	R4	K2
-      0x881C0109,  //  0018  GETMBR	R7	R0	K9
-      0x7C140400,  //  0019  CALL	R5	2
-      0x8C140902,  //  001A  GETMET	R5	R4	K2
-      0x881C010A,  //  001B  GETMBR	R7	R0	K10
-      0x7C140400,  //  001C  CALL	R5	2
-      0x8C140902,  //  001D  GETMET	R5	R4	K2
-      0x881C010B,  //  001E  GETMBR	R7	R0	K11
-      0x7C140400,  //  001F  CALL	R5	2
-      0x8C140902,  //  0020  GETMET	R5	R4	K2
-      0x881C010C,  //  0021  GETMBR	R7	R0	K12
-      0x7C140400,  //  0022  CALL	R5	2
-      0x8C14090E,  //  0023  GETMET	R5	R4	K14
-      0x7C140200,  //  0024  CALL	R5	1
-      0x90021A05,  //  0025  SETMBR	R0	K13	R5
-      0x7806000A,  //  0026  JMPF	R1	#0032
-      0x5416000F,  //  0027  LDINT	R5	16
-      0x541A001E,  //  0028  LDINT	R6	31
-      0x40140A06,  //  0029  CONNECT	R5	R5	R6
-      0x8818010D,  //  002A  GETMBR	R6	R0	K13
-      0x94140C05,  //  002B  GETIDX	R5	R6	R5
-      0x90021E05,  //  002C  SETMBR	R0	K15	R5
-      0x5416000E,  //  002D  LDINT	R5	15
-      0x40162005,  //  002E  CONNECT	R5	K16	R5
-      0x8818010D,  //  002F  GETMBR	R6	R0	K13
-      0x94140C05,  //  0030  GETIDX	R5	R6	R5
-      0x90021A05,  //  0031  SETMBR	R0	K13	R5
-      0x8C140711,  //  0032  GETMET	R5	R3	K17
-      0x7C140200,  //  0033  CALL	R5	1
-      0x8C180B12,  //  0034  GETMET	R6	R5	K18
-      0x8820010D,  //  0035  GETMBR	R8	R0	K13
-      0x60240015,  //  0036  GETGBL	R9	G21
-      0x7C240000,  //  0037  CALL	R9	0
-      0x60280015,  //  0038  GETGBL	R10	G21
-      0x7C280000,  //  0039  CALL	R10	0
-      0x8C281513,  //  003A  GETMET	R10	R10	K19
-      0x58300014,  //  003B  LDCONST	R12	K20
-      0x7C280400,  //  003C  CALL	R10	2
-      0x542E003F,  //  003D  LDINT	R11	64
-      0x7C180A00,  //  003E  CALL	R6	5
-      0x78060003,  //  003F  JMPF	R1	#0044
-      0x541E000E,  //  0040  LDINT	R7	15
-      0x401E2007,  //  0041  CONNECT	R7	K16	R7
-      0x941C0C07,  //  0042  GETIDX	R7	R6	R7
-      0x70020002,  //  0043  JMP		#0047
-      0x541E001E,  //  0044  LDINT	R7	31
-      0x401E2007,  //  0045  CONNECT	R7	K16	R7
-      0x941C0C07,  //  0046  GETIDX	R7	R6	R7
-      0x90022A07,  //  0047  SETMBR	R0	K21	R7
-      0x78060004,  //  0048  JMPF	R1	#004E
-      0x541E000F,  //  0049  LDINT	R7	16
-      0x5422001E,  //  004A  LDINT	R8	31
-      0x401C0E08,  //  004B  CONNECT	R7	R7	R8
-      0x941C0C07,  //  004C  GETIDX	R7	R6	R7
-      0x70020003,  //  004D  JMP		#0052
-      0x541E001F,  //  004E  LDINT	R7	32
-      0x5422003E,  //  004F  LDINT	R8	63
-      0x401C0E08,  //  0050  CONNECT	R7	R7	R8
-      0x941C0C07,  //  0051  GETIDX	R7	R6	R7
-      0x90022C07,  //  0052  SETMBR	R0	K22	R7
-      0x8C1C0B12,  //  0053  GETMET	R7	R5	K18
-      0x8824010D,  //  0054  GETMBR	R9	R0	K13
-      0x60280015,  //  0055  GETGBL	R10	G21
-      0x7C280000,  //  0056  CALL	R10	0
-      0x602C0015,  //  0057  GETGBL	R11	G21
-      0x7C2C0000,  //  0058  CALL	R11	0
-      0x8C2C1713,  //  0059  GETMET	R11	R11	K19
-      0x58340018,  //  005A  LDCONST	R13	K24
-      0x7C2C0400,  //  005B  CALL	R11	2
-      0x5432001F,  //  005C  LDINT	R12	32
-      0x7C1C0A00,  //  005D  CALL	R7	5
-      0x90022E07,  //  005E  SETMBR	R0	K23	R7
-      0x8C1C071A,  //  005F  GETMET	R7	R3	K26
-      0x88240115,  //  0060  GETMBR	R9	R0	K21
-      0x7C1C0400,  //  0061  CALL	R7	2
-      0x8C1C0F1B,  //  0062  GETMET	R7	R7	K27
-      0x88240109,  //  0063  GETMBR	R9	R0	K9
-      0x7C1C0400,  //  0064  CALL	R7	2
-      0x8C1C0F0E,  //  0065  GETMET	R7	R7	K14
-      0x7C1C0200,  //  0066  CALL	R7	1
-      0x90023207,  //  0067  SETMBR	R0	K25	R7
-      0x8C1C071A,  //  0068  GETMET	R7	R3	K26
-      0x88240116,  //  0069  GETMBR	R9	R0	K22
-      0x7C1C0400,  //  006A  CALL	R7	2
-      0x8C1C0F1B,  //  006B  GETMET	R7	R7	K27
-      0x88240108,  //  006C  GETMBR	R9	R0	K8
-      0x7C1C0400,  //  006D  CALL	R7	2
-      0x8C1C0F0E,  //  006E  GETMET	R7	R7	K14
-      0x7C1C0200,  //  006F  CALL	R7	1
-      0x90023807,  //  0070  SETMBR	R0	K28	R7
-      0x80000000,  //  0071  RET	0
+      0x5C0C0400,  //  0002  MOVE	R3	R2
+      0xA40E0200,  //  0003  IMPORT	R3	K1
+      0x5C100400,  //  0004  MOVE	R4	R2
+      0x7C100000,  //  0005  CALL	R4	0
+      0x8C140902,  //  0006  GETMET	R5	R4	K2
+      0x881C0103,  //  0007  GETMBR	R7	R0	K3
+      0x7C140400,  //  0008  CALL	R5	2
+      0x8C140902,  //  0009  GETMET	R5	R4	K2
+      0x881C0104,  //  000A  GETMBR	R7	R0	K4
+      0x7C140400,  //  000B  CALL	R5	2
+      0x8C140902,  //  000C  GETMET	R5	R4	K2
+      0x881C0105,  //  000D  GETMBR	R7	R0	K5
+      0x7C140400,  //  000E  CALL	R5	2
+      0x8C140902,  //  000F  GETMET	R5	R4	K2
+      0x881C0106,  //  0010  GETMBR	R7	R0	K6
+      0x7C140400,  //  0011  CALL	R5	2
+      0x8C140902,  //  0012  GETMET	R5	R4	K2
+      0x881C0107,  //  0013  GETMBR	R7	R0	K7
+      0x7C140400,  //  0014  CALL	R5	2
+      0x8C140902,  //  0015  GETMET	R5	R4	K2
+      0x881C0108,  //  0016  GETMBR	R7	R0	K8
+      0x7C140400,  //  0017  CALL	R5	2
+      0x8C140902,  //  0018  GETMET	R5	R4	K2
+      0x881C0109,  //  0019  GETMBR	R7	R0	K9
+      0x7C140400,  //  001A  CALL	R5	2
+      0x8C140902,  //  001B  GETMET	R5	R4	K2
+      0x881C010A,  //  001C  GETMBR	R7	R0	K10
+      0x7C140400,  //  001D  CALL	R5	2
+      0x8C140902,  //  001E  GETMET	R5	R4	K2
+      0x881C010B,  //  001F  GETMBR	R7	R0	K11
+      0x7C140400,  //  0020  CALL	R5	2
+      0x8C140902,  //  0021  GETMET	R5	R4	K2
+      0x881C010C,  //  0022  GETMBR	R7	R0	K12
+      0x7C140400,  //  0023  CALL	R5	2
+      0x8C14090E,  //  0024  GETMET	R5	R4	K14
+      0x7C140200,  //  0025  CALL	R5	1
+      0x90021A05,  //  0026  SETMBR	R0	K13	R5
+      0x7806000A,  //  0027  JMPF	R1	#0033
+      0x5416000F,  //  0028  LDINT	R5	16
+      0x541A001E,  //  0029  LDINT	R6	31
+      0x40140A06,  //  002A  CONNECT	R5	R5	R6
+      0x8818010D,  //  002B  GETMBR	R6	R0	K13
+      0x94140C05,  //  002C  GETIDX	R5	R6	R5
+      0x90021E05,  //  002D  SETMBR	R0	K15	R5
+      0x5416000E,  //  002E  LDINT	R5	15
+      0x40162005,  //  002F  CONNECT	R5	K16	R5
+      0x8818010D,  //  0030  GETMBR	R6	R0	K13
+      0x94140C05,  //  0031  GETIDX	R5	R6	R5
+      0x90021A05,  //  0032  SETMBR	R0	K13	R5
+      0x8C140711,  //  0033  GETMET	R5	R3	K17
+      0x7C140200,  //  0034  CALL	R5	1
+      0x8C180B12,  //  0035  GETMET	R6	R5	K18
+      0x8820010D,  //  0036  GETMBR	R8	R0	K13
+      0x60240015,  //  0037  GETGBL	R9	G21
+      0x7C240000,  //  0038  CALL	R9	0
+      0x60280015,  //  0039  GETGBL	R10	G21
+      0x7C280000,  //  003A  CALL	R10	0
+      0x8C281513,  //  003B  GETMET	R10	R10	K19
+      0x58300014,  //  003C  LDCONST	R12	K20
+      0x7C280400,  //  003D  CALL	R10	2
+      0x542E003F,  //  003E  LDINT	R11	64
+      0x7C180A00,  //  003F  CALL	R6	5
+      0x78060003,  //  0040  JMPF	R1	#0045
+      0x541E000E,  //  0041  LDINT	R7	15
+      0x401E2007,  //  0042  CONNECT	R7	K16	R7
+      0x941C0C07,  //  0043  GETIDX	R7	R6	R7
+      0x70020002,  //  0044  JMP		#0048
+      0x541E001E,  //  0045  LDINT	R7	31
+      0x401E2007,  //  0046  CONNECT	R7	K16	R7
+      0x941C0C07,  //  0047  GETIDX	R7	R6	R7
+      0x90022A07,  //  0048  SETMBR	R0	K21	R7
+      0x78060004,  //  0049  JMPF	R1	#004F
+      0x541E000F,  //  004A  LDINT	R7	16
+      0x5422001E,  //  004B  LDINT	R8	31
+      0x401C0E08,  //  004C  CONNECT	R7	R7	R8
+      0x941C0C07,  //  004D  GETIDX	R7	R6	R7
+      0x70020003,  //  004E  JMP		#0053
+      0x541E001F,  //  004F  LDINT	R7	32
+      0x5422003E,  //  0050  LDINT	R8	63
+      0x401C0E08,  //  0051  CONNECT	R7	R7	R8
+      0x941C0C07,  //  0052  GETIDX	R7	R6	R7
+      0x90022C07,  //  0053  SETMBR	R0	K22	R7
+      0x8C1C0B12,  //  0054  GETMET	R7	R5	K18
+      0x8824010D,  //  0055  GETMBR	R9	R0	K13
+      0x60280015,  //  0056  GETGBL	R10	G21
+      0x7C280000,  //  0057  CALL	R10	0
+      0x602C0015,  //  0058  GETGBL	R11	G21
+      0x7C2C0000,  //  0059  CALL	R11	0
+      0x8C2C1713,  //  005A  GETMET	R11	R11	K19
+      0x58340018,  //  005B  LDCONST	R13	K24
+      0x7C2C0400,  //  005C  CALL	R11	2
+      0x5432001F,  //  005D  LDINT	R12	32
+      0x7C1C0A00,  //  005E  CALL	R7	5
+      0x90022E07,  //  005F  SETMBR	R0	K23	R7
+      0x8C1C071A,  //  0060  GETMET	R7	R3	K26
+      0x88240115,  //  0061  GETMBR	R9	R0	K21
+      0x7C1C0400,  //  0062  CALL	R7	2
+      0x8C1C0F1B,  //  0063  GETMET	R7	R7	K27
+      0x88240109,  //  0064  GETMBR	R9	R0	K9
+      0x7C1C0400,  //  0065  CALL	R7	2
+      0x8C1C0F0E,  //  0066  GETMET	R7	R7	K14
+      0x7C1C0200,  //  0067  CALL	R7	1
+      0x90023207,  //  0068  SETMBR	R0	K25	R7
+      0x8C1C071A,  //  0069  GETMET	R7	R3	K26
+      0x88240116,  //  006A  GETMBR	R9	R0	K22
+      0x7C1C0400,  //  006B  CALL	R7	2
+      0x8C1C0F1B,  //  006C  GETMET	R7	R7	K27
+      0x88240108,  //  006D  GETMBR	R9	R0	K8
+      0x7C1C0400,  //  006E  CALL	R7	2
+      0x8C1C0F0E,  //  006F  GETMET	R7	R7	K14
+      0x7C1C0200,  //  0070  CALL	R7	1
+      0x90023807,  //  0071  SETMBR	R0	K28	R7
+      0x80000000,  //  0072  RET	0
     })
   )
 );
@@ -363,7 +369,8 @@ be_local_closure(SPAKE2P_Matter_compute_TT_hash,   /* name */
 /********************************************************************
 ** Solidified function: init
 ********************************************************************/
-be_local_closure(SPAKE2P_Matter_init,   /* name */
+extern const bclass be_class_SPAKE2P_Matter;
+be_local_closure(class_SPAKE2P_Matter_init,   /* name */
   be_nested_proto(
     7,                          /* nstack */
     4,                          /* argc */
@@ -371,7 +378,7 @@ be_local_closure(SPAKE2P_Matter_init,   /* name */
     0,                          /* has upvals */
     NULL,                       /* no upvals */
     0,                          /* has sup protos */
-    NULL,                       /* no sub protos */
+    &be_class_SPAKE2P_Matter, 
     1,                          /* has constants */
     ( &(const bvalue[ 8]) {     /* constants */
     /* K0   */  be_nested_str_weak(M),
@@ -411,7 +418,8 @@ be_local_closure(SPAKE2P_Matter_init,   /* name */
 /********************************************************************
 ** Solidified function: compute_pA
 ********************************************************************/
-be_local_closure(SPAKE2P_Matter_compute_pA,   /* name */
+extern const bclass be_class_SPAKE2P_Matter;
+be_local_closure(class_SPAKE2P_Matter_compute_pA,   /* name */
   be_nested_proto(
     10,                          /* nstack */
     2,                          /* argc */
@@ -419,7 +427,7 @@ be_local_closure(SPAKE2P_Matter_compute_pA,   /* name */
     0,                          /* has upvals */
     NULL,                       /* no upvals */
     0,                          /* has sup protos */
-    NULL,                       /* no sub protos */
+    &be_class_SPAKE2P_Matter, 
     1,                          /* has constants */
     ( &(const bvalue[ 9]) {     /* constants */
     /* K0   */  be_nested_str_weak(crypto),
@@ -468,7 +476,8 @@ be_local_closure(SPAKE2P_Matter_compute_pA,   /* name */
 /********************************************************************
 ** Solidified function: set_context
 ********************************************************************/
-be_local_closure(SPAKE2P_Matter_set_context,   /* name */
+extern const bclass be_class_SPAKE2P_Matter;
+be_local_closure(class_SPAKE2P_Matter_set_context,   /* name */
   be_nested_proto(
     5,                          /* nstack */
     4,                          /* argc */
@@ -476,7 +485,7 @@ be_local_closure(SPAKE2P_Matter_set_context,   /* name */
     0,                          /* has upvals */
     NULL,                       /* no upvals */
     0,                          /* has sup protos */
-    NULL,                       /* no sub protos */
+    &be_class_SPAKE2P_Matter, 
     1,                          /* has constants */
     ( &(const bvalue[ 3]) {     /* constants */
     /* K0   */  be_nested_str_weak(Context),
@@ -511,7 +520,8 @@ be_local_closure(SPAKE2P_Matter_set_context,   /* name */
 /********************************************************************
 ** Solidified function: compute_ZV_verifier
 ********************************************************************/
-be_local_closure(SPAKE2P_Matter_compute_ZV_verifier,   /* name */
+extern const bclass be_class_SPAKE2P_Matter;
+be_local_closure(class_SPAKE2P_Matter_compute_ZV_verifier,   /* name */
   be_nested_proto(
     11,                          /* nstack */
     2,                          /* argc */
@@ -519,7 +529,7 @@ be_local_closure(SPAKE2P_Matter_compute_ZV_verifier,   /* name */
     0,                          /* has upvals */
     NULL,                       /* no upvals */
     0,                          /* has sup protos */
-    NULL,                       /* no sub protos */
+    &be_class_SPAKE2P_Matter, 
     1,                          /* has constants */
     ( &(const bvalue[13]) {     /* constants */
     /* K0   */  be_nested_str_weak(crypto),
@@ -574,7 +584,8 @@ be_local_closure(SPAKE2P_Matter_compute_ZV_verifier,   /* name */
 /********************************************************************
 ** Solidified function: compute_ZV_prover
 ********************************************************************/
-be_local_closure(SPAKE2P_Matter_compute_ZV_prover,   /* name */
+extern const bclass be_class_SPAKE2P_Matter;
+be_local_closure(class_SPAKE2P_Matter_compute_ZV_prover,   /* name */
   be_nested_proto(
     11,                          /* nstack */
     2,                          /* argc */
@@ -582,7 +593,7 @@ be_local_closure(SPAKE2P_Matter_compute_ZV_prover,   /* name */
     0,                          /* has upvals */
     NULL,                       /* no upvals */
     0,                          /* has sup protos */
-    NULL,                       /* no sub protos */
+    &be_class_SPAKE2P_Matter, 
     1,                          /* has constants */
     ( &(const bvalue[13]) {     /* constants */
     /* K0   */  be_nested_str_weak(crypto),
@@ -642,11 +653,11 @@ be_local_class(SPAKE2P_Matter,
     NULL,
     be_nested_map(32,
     ( (struct bmapnode*) &(const bmapnode[]) {
-        { be_const_key_weak(compute_ZV_prover, 21), be_const_closure(SPAKE2P_Matter_compute_ZV_prover_closure) },
+        { be_const_key_weak(compute_ZV_prover, 21), be_const_closure(class_SPAKE2P_Matter_compute_ZV_prover_closure) },
         { be_const_key_weak(cA, -1), be_const_var(14) },
         { be_const_key_weak(CRYPTO_W_SIZE_BYTES, -1), be_const_int(40) },
         { be_const_key_weak(Kmain, 14), be_const_var(9) },
-        { be_const_key_weak(compute_pB, -1), be_const_closure(SPAKE2P_Matter_compute_pB_closure) },
+        { be_const_key_weak(compute_pB, -1), be_const_closure(class_SPAKE2P_Matter_compute_pB_closure) },
         { be_const_key_weak(B, 31), be_const_var(17) },
         { be_const_key_weak(K_shared, -1), be_const_var(12) },
         { be_const_key_weak(x, -1), be_const_var(7) },
@@ -657,14 +668,14 @@ be_local_class(SPAKE2P_Matter,
         { be_const_key_weak(A, -1), be_const_var(16) },
         { be_const_key_weak(Z, 4), be_const_var(5) },
         { be_const_key_weak(spake_M_hex, -1), be_nested_str_weak(04886e2f97ace46e55ba9dd7242579f2993b64e16ef3dcab95afd497333d8fa12f5ff355163e43ce224e0b0e65ff02ac8e5c7be09419c785e0ca547d55a12e2d20) },
-        { be_const_key_weak(compute_ZV_verifier, -1), be_const_closure(SPAKE2P_Matter_compute_ZV_verifier_closure) },
-        { be_const_key_weak(compute_TT_hash, 0), be_const_closure(SPAKE2P_Matter_compute_TT_hash_closure) },
+        { be_const_key_weak(compute_ZV_verifier, -1), be_const_closure(class_SPAKE2P_Matter_compute_ZV_verifier_closure) },
+        { be_const_key_weak(compute_TT_hash, 0), be_const_closure(class_SPAKE2P_Matter_compute_TT_hash_closure) },
         { be_const_key_weak(N, -1), be_const_var(20) },
         { be_const_key_weak(w0, -1), be_const_var(0) },
-        { be_const_key_weak(init, -1), be_const_closure(SPAKE2P_Matter_init_closure) },
-        { be_const_key_weak(compute_pA, 25), be_const_closure(SPAKE2P_Matter_compute_pA_closure) },
+        { be_const_key_weak(init, -1), be_const_closure(class_SPAKE2P_Matter_init_closure) },
+        { be_const_key_weak(compute_pA, 25), be_const_closure(class_SPAKE2P_Matter_compute_pA_closure) },
         { be_const_key_weak(cB, -1), be_const_var(15) },
-        { be_const_key_weak(set_context, -1), be_const_closure(SPAKE2P_Matter_set_context_closure) },
+        { be_const_key_weak(set_context, -1), be_const_closure(class_SPAKE2P_Matter_set_context_closure) },
         { be_const_key_weak(pB, 22), be_const_var(4) },
         { be_const_key_weak(M, -1), be_const_var(19) },
         { be_const_key_weak(y, -1), be_const_var(8) },
@@ -677,12 +688,5 @@ be_local_class(SPAKE2P_Matter,
     })),
     be_str_weak(SPAKE2P_Matter)
 );
-/*******************************************************************/
-
-void be_load_SPAKE2P_Matter_class(bvm *vm) {
-    be_pushntvclass(vm, &be_class_SPAKE2P_Matter);
-    be_setglobal(vm, "SPAKE2P_Matter");
-    be_pop(vm, 1);
-}
 /********************************************************************/
 /* End of solidification */

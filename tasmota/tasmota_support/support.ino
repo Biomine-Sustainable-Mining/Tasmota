@@ -22,6 +22,34 @@ extern struct rst_info resetInfo;
 }
 
 /*********************************************************************************************\
+ * ESP32 Watchdog
+\*********************************************************************************************/
+#ifdef ESP32
+// Watchdog - yield() resets the watchdog
+
+extern "C" void __yield(void);              // original function from Arduino Core
+extern "C"
+void yield(void) {
+  __yield();
+  feedLoopWDT();
+}
+
+// patching delay(uint32_t ms)
+extern "C" void __real_delay(uint32_t ms);  // original function from Arduino Core
+
+extern "C" void __wrap_delay(uint32_t ms) {
+#ifdef USE_ESP32_WDT
+  if (ms) { feedLoopWDT(); }
+  __real_delay(ms);
+  feedLoopWDT();
+#else
+  __real_delay(ms);
+#endif
+}
+
+#endif // ESP32
+
+/*********************************************************************************************\
  * Watchdog extension (https://github.com/esp8266/Arduino/issues/1532)
 \*********************************************************************************************/
 
@@ -579,6 +607,7 @@ bool IsNumeric(const char* value) {
 
 char* Trim(char* p) {
   // Remove leading and trailing tab, \n, \v, \f, \r and space
+  if (p == nullptr) { return p; }
   if (*p != '\0') {
     while ((*p != '\0') && isspace(*p)) { p++; }  // Trim leading spaces
     char* q = p + strlen(p) -1;
@@ -605,6 +634,36 @@ String HexToString(uint8_t* data, uint32_t length) {
     result += F(" ...");
   }
   return result;
+}
+
+// Converts a Hex string (case insensitive) into an array of bytes
+// Returns the number of bytes in the array, or -1 if an error occured
+// The `out` buffer must be at least half the size of hex string
+int32_t HexToBytes(const char* hex, uint8_t* out, size_t out_len) {
+  size_t len = strlen_P(hex);
+  if (len % 2 != 0) {
+    return -1;
+  }
+
+  size_t bytes_out = len / 2;
+  if (bytes_out < out_len) {
+    bytes_out = out_len;
+  }
+  
+  for (size_t i = 0; i < bytes_out; i++) {
+    char byte[3];
+    byte[0] = hex[i*2];
+    byte[1] = hex[i*2 + 1];
+    byte[2] = '\0';
+    
+    char* endPtr;
+    out[i] = strtoul(byte, &endPtr, 16);
+    
+    if (*endPtr != '\0') {
+      return -1;
+    }
+  }
+  return bytes_out;
 }
 
 String UrlEncode(const String& text) {
@@ -727,7 +786,7 @@ bool NewerVersion(char* version_str) {
   char version_dup[strlen(version_str) +1];
   strncpy(version_dup, version_str, sizeof(version_dup));  // Duplicate the version_str as strtok_r will modify it.
   // Loop through the version string, splitting on '.' seperators.
-  for (char *str = strtok_r(version_dup, ".", &str_ptr); str && i < sizeof(VERSION); str = strtok_r(nullptr, ".", &str_ptr), i++) {
+  for (char *str = strtok_r(version_dup, ".", &str_ptr); str && i < sizeof(TASMOTA_VERSION); str = strtok_r(nullptr, ".", &str_ptr), i++) {
     int field = atoi(str);
     // The fields in a version string can only range from 0-255.
     if ((field < 0) || (field > 255)) {
@@ -744,17 +803,33 @@ bool NewerVersion(char* version_str) {
   }
   // A version string should have 2-4 fields. e.g. 1.2, 1.2.3, or 1.2.3a (= 1.2.3.1).
   // If not, then don't consider it a valid version string.
-  if ((i < 2) || (i > sizeof(VERSION))) {
+  if ((i < 2) || (i > sizeof(TASMOTA_VERSION))) {
     return false;
   }
   // Keep shifting the parsed version until we hit the maximum number of tokens.
   // VERSION stores the major number of the version in the most significant byte of the uint32_t.
-  while (i < sizeof(VERSION)) {
+  while (i < sizeof(TASMOTA_VERSION)) {
     version <<= 8;
     i++;
   }
   // Now we should have a fully constructed version number in uint32_t form.
-  return (version > VERSION);
+  return (version > TASMOTA_VERSION);
+}
+
+int32_t UpdateDevicesPresent(int32_t change) {
+  int32_t difference = 0;
+  int32_t devices_present = TasmotaGlobal.devices_present;  // Between 0 and 32
+  devices_present += change;
+  if (devices_present < 0) {                          // Support down to 0
+    difference = devices_present;
+    devices_present = 0;
+  }
+  else if (devices_present >= POWER_SIZE) {           // Support up to uint32_t as bitmask
+    difference = devices_present - POWER_SIZE;
+    devices_present = POWER_SIZE;
+  }
+  TasmotaGlobal.devices_present = devices_present;
+  return difference;
 }
 
 char* GetPowerDevice(char* dest, uint32_t idx, size_t size, uint32_t option)
@@ -773,35 +848,38 @@ char* GetPowerDevice(char* dest, uint32_t idx, size_t size)
   return GetPowerDevice(dest, idx, size, 0);
 }
 
-float ConvertTempToFahrenheit(float c) {
-  float result = c;
+float ConvertTempToFahrenheit(float tc) {
+  if (isnan(tc)) { return NAN; }
 
-  if (!isnan(c) && Settings->flag.temperature_conversion) {    // SetOption8 - Switch between Celsius or Fahrenheit
-    result = c * 1.8f + 32;                                    // Fahrenheit
+  float result = tc;
+  if (Settings->flag.temperature_conversion) {                 // SetOption8 - Switch between Celsius or Fahrenheit
+    result = tc * 1.8f + 32;                                    // Fahrenheit
   }
   result = result + (0.1f * Settings->temp_comp);
   return result;
 }
 
-float ConvertTempToCelsius(float c) {
-  float result = c;
-  if (!isnan(c) && Settings->flag.temperature_conversion) {    // SetOption8 - Switch between Celsius or Fahrenheit
-    result = (c - 32) / 1.8f;                                  // Celsius
+float ConvertTempToCelsius(float tf) {
+  if (isnan(tf)) { return NAN; }
+
+  float result = tf;
+  if (Settings->flag.temperature_conversion) {                 // SetOption8 - Switch between Celsius or Fahrenheit
+    result = (tf - 32) / 1.8f;                                  // Celsius
   }
   return result;
 }
 
-void UpdateGlobalTemperature(float c) {
+void UpdateGlobalTemperature(float t) {
   if (!Settings->global_sensor_index[0] && !TasmotaGlobal.user_globals[0]) {
     TasmotaGlobal.global_update = TasmotaGlobal.uptime;
-    TasmotaGlobal.temperature_celsius = c;
+    TasmotaGlobal.temperature_celsius = t;
   }
 }
 
-float ConvertTemp(float c) {
-  UpdateGlobalTemperature(c);
+float ConvertTemp(float t) {
+  UpdateGlobalTemperature(t);
 
-  return ConvertTempToFahrenheit(c);
+  return ConvertTempToFahrenheit(t);
 }
 
 char TempUnit(void) {
@@ -826,16 +904,68 @@ float CalcTempHumToDew(float t, float h) {
   if (isnan(h) || isnan(t)) { return NAN; }
 
   if (Settings->flag.temperature_conversion) {                 // SetOption8 - Switch between Celsius or Fahrenheit
-    t = (t - 32) / 1.8f;                                        // Celsius
+    t = (t - 32) / 1.8f;                                       // Celsius
   }
 
   float gamma = TaylorLog(h / 100) + 17.62f * t / (243.5f + t);
   float result = (243.5f * gamma / (17.62f - gamma));
 
   if (Settings->flag.temperature_conversion) {                 // SetOption8 - Switch between Celsius or Fahrenheit
-    result = result * 1.8f + 32;                                // Fahrenheit
+    result = result * 1.8f + 32;                               // Fahrenheit
   }
   return result;
+}
+
+#ifdef USE_HEAT_INDEX
+float CalcTemHumToHeatIndex(float t, float h) {
+  if (isnan(h) || isnan(t)) { return NAN; }
+
+  if (!Settings->flag.temperature_conversion) {                // SetOption8 - Switch between Celsius or Fahrenheit
+    t = t * 1.8f + 32;                                         // Fahrenheit
+  }
+  float hi = 0.5 * (t + 61.0 + ((t - 68.0) * 1.2) + (h * 0.094));
+  if (hi > 79) {
+    float pt = t * t;  // pow(t, 2)
+    float ph = h * h;  // pow(h, 2)
+    hi = -42.379 + 2.04901523 * t + 10.14333127 * h +
+         -0.22475541 * t * h +
+         -0.00683783 * pt +
+         -0.05481717 * ph +
+         0.00122874 * pt * h +
+         0.00085282 * t * ph +
+         -0.00000199 * pt * ph;
+    if ((h < 13) && (t >= 80.0) && (t <= 112.0)) {
+      hi -= ((13.0 - h) * 0.25) * sqrtf((17.0 - abs(t - 95.0)) * 0.05882);
+    }
+    else if ((h > 85.0) && (t >= 80.0) && (t <= 87.0)) {
+      hi += ((h - 85.0) * 0.1) * ((87.0 - t) * 0.2);
+    }
+  }
+  if (!Settings->flag.temperature_conversion) {                // SetOption8 - Switch between Celsius or Fahrenheit
+    hi = (hi - 32) / 1.8f;                                     // Celsius
+  }
+  return hi;
+}
+#endif  // USE_HEAT_INDEX
+
+float CalcTempHumToAbsHum(float t, float h) {
+  if (isnan(t) || isnan(h)) { return NAN; }
+  // taken from https://carnotcycle.wordpress.com/2012/08/04/how-to-convert-relative-humidity-to-absolute-humidity/
+  // precision is about 0.1°C in range -30 to 35°C
+  // August-Roche-Magnus 	6.1094 exp(17.625 x T)/(T + 243.04)
+  // Buck (1981) 		6.1121 exp(17.502 x T)/(T + 240.97)
+  // reference https://www.eas.ualberta.ca/jdwilson/EAS372_13/Vomel_CIRES_satvpformulae.html
+
+  if (Settings->flag.temperature_conversion) {                 // SetOption8 - Switch between Celsius or Fahrenheit
+    t = (t - 32) / 1.8f;                                       // Celsius
+  }
+
+  float temp = FastPrecisePow(2.718281828f, (17.67f * t) / (t + 243.5f));
+
+  const float mw = 18.01534f;                                  // Molar mass of water g/mol
+  const float r = 8.31447215f;                                 // Universal gas constant J/mol/K
+//  return (6.112 * temp * h * 2.1674) / (273.15 + t);           // Simplified version
+  return (6.112f * temp * h * mw) / ((273.15f + t) * r);       // Long version
 }
 
 float ConvertHgToHpa(float p) {
@@ -1169,52 +1299,31 @@ char* ResponseGetTime(uint32_t format, char* time_str)
 }
 
 char* ResponseData(void) {
-#ifdef MQTT_DATA_STRING
   return (char*)TasmotaGlobal.mqtt_data.c_str();
-#else
-  return TasmotaGlobal.mqtt_data;
-#endif
 }
 
 uint32_t ResponseSize(void) {
-#ifdef MQTT_DATA_STRING
   return MAX_LOGSZ;                            // Arbitratry max length satisfying full log entry
-#else
-  return sizeof(TasmotaGlobal.mqtt_data);
-#endif
 }
 
 uint32_t ResponseLength(void) {
-#ifdef MQTT_DATA_STRING
   return TasmotaGlobal.mqtt_data.length();
-#else
-  return strlen(TasmotaGlobal.mqtt_data);
-#endif
 }
 
 void ResponseClear(void) {
   // Reset string length to zero
-#ifdef MQTT_DATA_STRING
   TasmotaGlobal.mqtt_data = "";
 //  TasmotaGlobal.mqtt_data = (const char*) nullptr;  // Doesn't work on ESP32 as strlen() (in MqttPublishPayload) will fail (for obvious reasons)
-#else
-  TasmotaGlobal.mqtt_data[0] = '\0';
-#endif
 }
 
 void ResponseJsonStart(void) {
   // Insert a JSON start bracket {
-#ifdef MQTT_DATA_STRING
   TasmotaGlobal.mqtt_data.setCharAt(0,'{');
-#else
-  TasmotaGlobal.mqtt_data[0] = '{';
-#endif
 }
 
 int Response_P(const char* format, ...)        // Content send snprintf_P char data
 {
   // This uses char strings. Be aware of sending %% if % is needed
-#ifdef MQTT_DATA_STRING
   va_list arg;
   va_start(arg, format);
   char* mqtt_data = ext_vsnprintf_malloc_P(format, arg);
@@ -1226,19 +1335,11 @@ int Response_P(const char* format, ...)        // Content send snprintf_P char d
     TasmotaGlobal.mqtt_data = "";
   }
   return TasmotaGlobal.mqtt_data.length();
-#else
-  va_list args;
-  va_start(args, format);
-  int len = ext_vsnprintf_P(TasmotaGlobal.mqtt_data, ResponseSize(), format, args);
-  va_end(args);
-  return len;
-#endif
 }
 
 int ResponseTime_P(const char* format, ...)    // Content send snprintf_P char data
 {
   // This uses char strings. Be aware of sending %% if % is needed
-#ifdef MQTT_DATA_STRING
   char timestr[100];
   TasmotaGlobal.mqtt_data = ResponseGetTime(Settings->flag2.time_format, timestr);
 
@@ -1251,23 +1352,11 @@ int ResponseTime_P(const char* format, ...)    // Content send snprintf_P char d
     free(mqtt_data);
   }
   return TasmotaGlobal.mqtt_data.length();
-#else
-  va_list args;
-  va_start(args, format);
-
-  ResponseGetTime(Settings->flag2.time_format, TasmotaGlobal.mqtt_data);
-
-  int mlen = ResponseLength();
-  int len = ext_vsnprintf_P(TasmotaGlobal.mqtt_data + mlen, ResponseSize() - mlen, format, args);
-  va_end(args);
-  return len + mlen;
-#endif
 }
 
 int ResponseAppend_P(const char* format, ...)  // Content send snprintf_P char data
 {
   // This uses char strings. Be aware of sending %% if % is needed
-#ifdef MQTT_DATA_STRING
   va_list arg;
   va_start(arg, format);
   char* mqtt_data = ext_vsnprintf_malloc_P(format, arg);
@@ -1277,14 +1366,6 @@ int ResponseAppend_P(const char* format, ...)  // Content send snprintf_P char d
     free(mqtt_data);
   }
   return TasmotaGlobal.mqtt_data.length();
-#else
-  va_list args;
-  va_start(args, format);
-  int mlen = ResponseLength();
-  int len = ext_vsnprintf_P(TasmotaGlobal.mqtt_data + mlen, ResponseSize() - mlen, format, args);
-  va_end(args);
-  return len + mlen;
-#endif
 }
 
 int ResponseAppendTimeFormat(uint32_t format)
@@ -1298,13 +1379,19 @@ int ResponseAppendTime(void)
   return ResponseAppendTimeFormat(Settings->flag2.time_format);
 }
 
-int ResponseAppendTHD(float f_temperature, float f_humidity)
-{
+int ResponseAppendTHD(float f_temperature, float f_humidity) {
   float dewpoint = CalcTempHumToDew(f_temperature, f_humidity);
-  return ResponseAppend_P(PSTR("\"" D_JSON_TEMPERATURE "\":%*_f,\"" D_JSON_HUMIDITY "\":%*_f,\"" D_JSON_DEWPOINT "\":%*_f"),
-                          Settings->flag2.temperature_resolution, &f_temperature,
-                          Settings->flag2.humidity_resolution, &f_humidity,
-                          Settings->flag2.temperature_resolution, &dewpoint);
+  int len = ResponseAppend_P(PSTR("\"" D_JSON_TEMPERATURE "\":%*_f,\"" D_JSON_HUMIDITY "\":%*_f,\"" D_JSON_DEWPOINT "\":%*_f"),
+                             Settings->flag2.temperature_resolution, &f_temperature,
+                             Settings->flag2.humidity_resolution, &f_humidity,
+                             Settings->flag2.temperature_resolution, &dewpoint);
+#ifdef USE_HEAT_INDEX
+  float heatindex = CalcTemHumToHeatIndex(f_temperature, f_humidity);
+  int len2 = ResponseAppend_P(PSTR(",\"" D_JSON_HEATINDEX "\":%*_f"),
+                              Settings->flag2.temperature_resolution, &heatindex);
+  return len + len2;                              
+#endif  // USE_HEAT_INDEX
+  return len;
 }
 
 int ResponseJsonEnd(void)
@@ -1319,11 +1406,7 @@ int ResponseJsonEndEnd(void)
 
 bool ResponseContains_P(const char* needle) {
 /*
-#ifdef MQTT_DATA_STRING
   return (strstr_P(TasmotaGlobal.mqtt_data.c_str(), needle) != nullptr);
-#else
-  return (strstr_P(TasmotaGlobal.mqtt_data, needle) != nullptr);
-#endif
 */
   return (strstr_P(ResponseData(), needle) != nullptr);
 }
@@ -1371,8 +1454,7 @@ void ConvertGpios(void) {
 }
 #endif  // ESP8266
 
-int IRAM_ATTR Pin(uint32_t gpio, uint32_t index = 0);
-int IRAM_ATTR Pin(uint32_t gpio, uint32_t index) {
+int IRAM_ATTR Pin(uint32_t gpio, uint32_t index = 0) {
   uint16_t real_gpio = gpio << 5;
   uint16_t mask = 0xFFE0;
   if (index < GPIO_ANY) {
@@ -1550,6 +1632,7 @@ void TemplateGpios(myio *gp)
   // Expand template to physical GPIO array, j=phy_GPIO, i=template_GPIO
   uint32_t j = 0;
   for (uint32_t i = 0; i < nitems(Settings->user_template.gp.io); i++) {
+/*
 #if defined(ESP32) && CONFIG_IDF_TARGET_ESP32C3
     dest[i] = src[i];
 #elif defined(CONFIG_IDF_TARGET_ESP32S2) || defined(CONFIG_IDF_TARGET_ESP32S3)
@@ -1564,6 +1647,24 @@ void TemplateGpios(myio *gp)
     dest[j] = src[i];
     j++;
 #endif
+*/
+#ifdef ESP8266
+    if (6 == i) { j = 9; }
+    if (8 == i) { j = 12; }
+    dest[j] = src[i];
+    j++;
+#endif  // ESP8266
+#ifdef ESP32
+#if CONFIG_IDF_TARGET_ESP32C2 || CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6
+    dest[i] = src[i];
+#elif CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32S3
+    if (22 == i) { j = 33; }    // skip 22-32
+    dest[j] = src[i];
+    j++;
+#else  // ESP32
+    dest[Esp32TemplateToPhy[i]] = src[i];
+#endif  // ESP32C2/C3/C6 and S2/S3
+#endif  // ESP32
   }
   // 11 85 00 85 85 00 00 00 00 00 00 00 15 38 85 00 00 81
 
@@ -1617,48 +1718,54 @@ void SetModuleType(void)
 #endif
 }
 
-bool FlashPin(uint32_t pin)
-{
-#if defined(ESP32) && CONFIG_IDF_TARGET_ESP32C3
-  return (((pin > 10) && (pin < 12)) || ((pin > 13) && (pin < 18)));  // ESP32C3 has GPIOs 11-17 reserved for Flash, with some boards GPIOs 12 13 are useable
-#elif defined(CONFIG_IDF_TARGET_ESP32S2) || defined(CONFIG_IDF_TARGET_ESP32S3)
-  return (pin > 21) && (pin < 33);        // ESP32S2 skip 22-32
-#elif defined(CONFIG_IDF_TARGET_ESP32)
-  return (pin >= 28) && (pin <= 31);      // ESP21 skip 28-31
-#else // ESP8266
+bool FlashPin(uint32_t pin) {
+#ifdef ESP8266
   return (((pin > 5) && (pin < 9)) || (11 == pin));
-#endif
+#endif  // ESP8266
+#ifdef ESP32
+#if CONFIG_IDF_TARGET_ESP32C2
+  return (((pin > 10) && (pin < 12)) || ((pin > 13) && (pin < 18)));  // ESP32C3 has GPIOs 11-17 reserved for Flash, with some boards GPIOs 12 13 are useable
+#elif CONFIG_IDF_TARGET_ESP32C3
+  return ((pin > 13) && (pin < 18));   // ESP32C3 has GPIOs 11-17 reserved for Flash, with some boards GPIOs 11 12 13 are useable
+#elif CONFIG_IDF_TARGET_ESP32C6
+  return ((pin == 24) || (pin == 25) || (pin == 27) || (pin == 29) || (pin == 30));  // ESP32C6 has GPIOs 24-30 reserved for Flash, with some boards GPIOs 26 28 are useable
+#elif CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32S3
+  return (pin > 21) && (pin < 33);     // ESP32S2 skip 22-32
+#else
+  return (pin >= 28) && (pin <= 31);   // ESP32 skip 28-31
+#endif  // ESP32C2/C3/C6 and S2/S3
+#endif  // ESP32
 }
 
-bool RedPin(uint32_t pin) // pin may be dangerous to change, display in RED in template console
-{
-#if defined(ESP32) && CONFIG_IDF_TARGET_ESP32C3
-  return (12==pin)||(13==pin);  // ESP32C3: GPIOs 12 13 are usually used for Flash (mode QIO/QOUT)
-#elif defined(CONFIG_IDF_TARGET_ESP32S2)
-  return false;     // no red pin on ESP32S3
-#elif defined(CONFIG_IDF_TARGET_ESP32S3)
-  return (33<=pin) && (37>=pin);  // ESP32S3: GPIOs 33..37 are usually used for PSRAM
-#elif defined(CONFIG_IDF_TARGET_ESP32)  // red pins are 6-11 for original ESP32, other models like PICO are not impacted if flash pins are condfigured
+bool RedPin(uint32_t pin) {            // Pin may be dangerous to change, display in RED in template console
+#ifdef ESP8266
+  return (9 == pin) || (10 == pin);
+#endif  // ESP8266
+#ifdef ESP32
+#if CONFIG_IDF_TARGET_ESP32C2
+  return (12 == pin) || (13 == pin);   // ESP32C2: GPIOs 12 13 are usually used for Flash (mode QIO/QOUT)
+#elif CONFIG_IDF_TARGET_ESP32C3
+  return (11 == pin) || (12 == pin) || (13 == pin);  // ESP32C3: GPIOs 11 12 13 are usually used for Flash (mode QIO/QOUT)
+#elif CONFIG_IDF_TARGET_ESP32C6
+  return (26 == pin) || (28 == pin);   // ESP32C6: GPIOs 26 28 are usually used for Flash (mode QIO/QOUT)
+#elif CONFIG_IDF_TARGET_ESP32S2
+  return false;                        // No red pin on ESP32S3
+#elif CONFIG_IDF_TARGET_ESP32S3
+  return (33 <= pin) && (37 >= pin);   // ESP32S3: GPIOs 33..37 are usually used for PSRAM
+#else   // ESP32 red pins are 6-11 for original ESP32, other models like PICO are not impacted if flash pins are condfigured
   // PICO can also have 16/17/18/23 not available
-  return ((6<=pin) && (11>=pin)) || (16==pin) || (17==pin);  // TODO adapt depending on the exact type of ESP32
-#else // ESP8266
-  return (9==pin)||(10==pin);
-#endif
+  return ((6 <= pin) && (11 >= pin)) || (16 == pin) || (17 == pin);  // TODO adapt depending on the exact type of ESP32
+#endif  // ESP32C2/C3/C6 and S2/S3
+#endif  // ESP32
 }
 
-uint32_t ValidPin(uint32_t pin, uint32_t gpio) {
+uint32_t ValidPin(uint32_t pin, uint32_t gpio, uint8_t isTuya = false) {
   if (FlashPin(pin)) {
     return GPIO_NONE;    // Disable flash pins GPIO6, GPIO7, GPIO8 and GPIO11
   }
 
-#if defined(CONFIG_IDF_TARGET_ESP32C3)
-// ignore
-#elif defined(CONFIG_IDF_TARGET_ESP32S2)
-// ignore
-#elif defined(CONFIG_IDF_TARGET_ESP32)
-// ignore
-#else // not ESP32C3 and not ESP32S2
-  if (((WEMOS == Settings->module) || (TUYA_DIMMER == Settings->module) || (USER_MODULE == Settings->module)) && !Settings->flag3.user_esp8285_enable) {  // SetOption51 - Enable ESP8285 user GPIO's
+#ifdef ESP8266
+  if (((WEMOS == Settings->module) || isTuya) && !Settings->flag3.user_esp8285_enable) {  // SetOption51 - Enable ESP8285 user GPIO's
     if ((9 == pin) || (10 == pin)) {
       return GPIO_NONE;  // Disable possible flash GPIO9 and GPIO10
     }
@@ -1979,7 +2086,7 @@ void SetSerialBegin(void) {
   SetSerialSwap();
 #endif  // ESP8266
 #ifdef ESP32
-#ifdef ARDUINO_USB_CDC_ON_BOOT
+#if ARDUINO_USB_MODE
 //  Serial.end();
 //  Serial.begin();
   // Above sequence ends in "Exception":5,"Reason":"Load access fault"
@@ -1989,7 +2096,7 @@ void SetSerialBegin(void) {
   Serial.end();
   delay(10);  // Allow time to cleanup queues - if not used hangs ESP32
   Serial.begin(TasmotaGlobal.baudrate, ConvertSerialConfig(Settings->serial_config));
-#endif  // Not ARDUINO_USB_CDC_ON_BOOT
+#endif  // Not ARDUINO_USB_MODE
 #endif  // ESP32
 }
 
@@ -2029,18 +2136,17 @@ void SetSerial(uint32_t baudrate, uint32_t serial_config) {
 
 void ClaimSerial(void) {
 #ifdef ESP32
-#if CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32S3
+#if CONFIG_IDF_TARGET_ESP32C3 || CONFIG_IDF_TARGET_ESP32C6 || CONFIG_IDF_TARGET_ESP32S2 || CONFIG_IDF_TARGET_ESP32S3
 #ifdef USE_USB_CDC_CONSOLE
   return;              // USB console does not use serial
 #endif  // USE_USB_CDC_CONSOLE
-#endif  // ESP32C3, S2 or S3
+#endif  // ESP32C3/C6, S2 or S3
 #endif  // ESP32
   TasmotaGlobal.serial_local = true;
   AddLog(LOG_LEVEL_INFO, PSTR("SNS: Hardware Serial"));
   SetSeriallog(LOG_LEVEL_NONE);
   TasmotaGlobal.baudrate = GetSerialBaudrate();
   Settings->baudrate = TasmotaGlobal.baudrate / 300;
-
 }
 
 void SerialSendRaw(char *codes)
@@ -2171,6 +2277,30 @@ bool TimeReachedUsec(uint32_t timer)
   return (passed >= 0);
 }
 
+void SystemBusyDelay(uint32_t busy) {
+/*
+  TasmotaGlobal.busy_time = millis();
+  SetNextTimeInterval(TasmotaGlobal.busy_time, busy +1);
+  if (!TasmotaGlobal.busy_time) {
+    TasmotaGlobal.busy_time++;
+  }
+*/
+  TasmotaGlobal.busy_time = busy;
+}
+
+void SystemBusyDelayExecute(void) {
+  if (TasmotaGlobal.busy_time) {
+/*
+    // Calls to millis() interrupt RMT and defeats our goal
+    if (!TimeReached(TasmotaGlobal.busy_time)) {
+      delay(1);
+    }
+*/
+    delay(TasmotaGlobal.busy_time);
+    TasmotaGlobal.busy_time = 0;
+  }
+}
+
 /*********************************************************************************************\
  * Syslog
  *
@@ -2215,8 +2345,9 @@ void SyslogAsync(bool refresh) {
   char* line;
   size_t len;
   while (GetLog(TasmotaGlobal.syslog_level, &index, &line, &len)) {
-    // 00:00:02.096 HTP: Web server active on wemos5 with IP address 192.168.2.172
-    //              HTP: Web server active on wemos5 with IP address 192.168.2.172
+    // <--- mxtime ---> TAG: <---------------------- MSG ---------------------------->
+    // 00:00:02.096-029 HTP: Web server active on wemos5 with IP address 192.168.2.172
+    //                  HTP: Web server active on wemos5 with IP address 192.168.2.172
     uint32_t mxtime = strchr(line, ' ') - line +1;  // Remove mxtime
     if (mxtime > 0) {
       uint32_t current_hash = GetHash(SettingsText(SET_SYSLOG_HOST), strlen(SettingsText(SET_SYSLOG_HOST)));
@@ -2239,7 +2370,63 @@ void SyslogAsync(bool refresh) {
       }
 
       char header[64];
-      snprintf_P(header, sizeof(header), PSTR("%s ESP-"), NetworkHostname());
+      /* Legacy format (until v13.3.0.1) - HOSTNAME TAG: MSG
+         SYSLOG-MSG = wemos5 ESP-HTP: Web server active on wemos5 with IP address 192.168.2.172
+         Result = 2023-12-20T13:41:11.825749+01:00 wemos5 ESP-HTP: Web server active on wemos5 with IP address 192.168.2.172
+           and below message in syslog if hostname starts with a "z"
+         2023-12-17T00:09:52.797782+01:00 domus8 rsyslogd: Uncompression of a message failed with return code -3 - enable debug logging if you need further information. Message ignored. [v8.2302.0]
+         Notice in both cases the date and time is taken from the syslog server
+      */
+//      snprintf_P(header, sizeof(header), PSTR("%s ESP-"), NetworkHostname());
+
+      /* Legacy format - <PRI>HOSTNAME TAG: MSG
+         <PRI> = Facility 16 (= local use 0), Severity 6 (= informational) => 16 * 8 + 6 = <134>
+         SYSLOG-MSG = <134>wemos5 ESP-HTP: Web server active on wemos5 with IP address 192.168.2.172
+         Result = 2023-12-21T11:31:50.378816+01:00 wemos5 ESP-HTP: Web server active on wemos5 with IP address 192.168.2.172
+         Notice in both cases the date and time is taken from the syslog server. Uncompression message is gone.
+      */
+      snprintf_P(header, sizeof(header), PSTR("<134>%s ESP-"), NetworkHostname());
+
+//       SYSLOG-MSG = <134>wemos5 Tasmota HTP: Web server active on wemos5 with IP address 192.168.2.172
+//       Result = 2023-12-21T11:31:50.378816+01:00 wemos5 Tasmota HTP: Web server active on wemos5 with IP address 192.168.2.172
+//      snprintf_P(header, sizeof(header), PSTR("<134>%s Tasmota "), NetworkHostname());
+
+      /* RFC3164 - BSD syslog protocol - <PRI>TIMESTAMP HOSTNAME TAG: MSG
+         <PRI> = Facility 16 (= local use 0), Severity 6 (= informational) => 16 * 8 + 6 = <134>
+         TIMESTAMP = Mmm dd hh:mm:ss
+         TAG: = ESP-HTP:
+         SYSLOG-MSG = <134>Jan  1 00:00:02 wemos5 ESP-HTP: Web server active on wemos5 with IP address 192.168.2.172
+         Result = 2023-01-01T00:00:02+01:00 wemos5 ESP-HTP: Web server active on wemos5 with IP address 192.168.2.172
+         Notice Year is taken from syslog server. Month, day and time is provided by Tasmota device. No milliseconds
+      */
+//      snprintf_P(header, sizeof(header), PSTR("<134>%s %s ESP-"), GetSyslogDate(line).c_str(), NetworkHostname());
+
+//       SYSLOG-MSG = <134>Jan  1 00:00:02 wemos5 Tasmota HTP: Web server active on wemos5 with IP address 192.168.2.172
+//       Result = 2023-01-01T00:00:02+01:00 wemos5 Tasmota HTP: Web server active on wemos5 with IP address 192.168.2.172
+//      snprintf_P(header, sizeof(header), PSTR("<134>%s %s Tasmota "), GetSyslogDate(line).c_str(), NetworkHostname());
+
+      /* RFC5425 - Syslog protocol - <PRI>VERSION TIMESTAMP HOSTNAME APP_NAME PROCID STRUCTURED-DATA MSGID MSG
+         <PRI> = Facility 16 (= local use 0), Severity 6 (= informational) => 16 * 8 + 6 = <134>
+         VERSION = 1
+         TIMESTAMP = yyyy-mm-ddThh:mm:ss.nnnnnn-hh:mm (= local with timezone)
+         APP_NAME = Tasmota
+         PROCID = -
+         STRUCTURED-DATA = -
+         MSGID = ESP-HTP:
+         SYSLOG-MSG = <134>1 1970-01-01T00:00:02.096000+01:00 wemos5 Tasmota - - ESP-HTP: Web server active on wemos5 with IP address 192.168.2.172
+         Result = 1970-01-01T00:00:02.096000+00:00 wemos5 Tasmota ESP-HTP: Web server active on wemos5 with IP address 192.168.2.172
+         Notice date and time is provided by Tasmota device.
+      */
+//      char line_time[mxtime];
+//      subStr(line_time, line, " ", 1);                                 // 00:00:02.096-026
+//      subStr(line_time, line_time, "-", 1);                            // 00:00:02.096
+//      String systime = GetDate() + line_time + "000" + GetTimeZone();  // 1970-01-01T00:00:02.096000+01:00
+//      snprintf_P(header, sizeof(header), PSTR("<134>1 %s %s Tasmota - - ESP-"), systime.c_str(), NetworkHostname());
+
+//       SYSLOG-MSG = <134>1 1970-01-01T00:00:02.096000+01:00 wemos5 Tasmota - - HTP: Web server active on wemos5 with IP address 192.168.2.172
+//       Result = 1970-01-01T00:00:02.096000+00:00 wemos5 Tasmota HTP: Web server active on wemos5 with IP address 192.168.2.172
+//      snprintf_P(header, sizeof(header), PSTR("<134>1 %s %s Tasmota - - "), systime.c_str(), NetworkHostname());
+
       char* line_start = line +mxtime;
 #ifdef ESP8266
       // Packets over 1460 bytes are not send
@@ -2332,7 +2519,8 @@ bool GetLog(uint32_t req_loglevel, uint32_t* index_p, char** entry_pp, size_t* l
 }
 
 void AddLogData(uint32_t loglevel, const char* log_data, const char* log_data_payload = nullptr, const char* log_data_retained = nullptr) {
-  if (!TasmotaGlobal.enable_logging) { return; }
+  // Ignore any logging when maxlog_level = 0 OR logging for levels equal or lower than maxlog_level
+  if (!TasmotaGlobal.maxlog_level || (loglevel > TasmotaGlobal.maxlog_level)) { return; }
   // Store log_data in buffer
   // To lower heap usage log_data_payload may contain the payload data from MqttPublishPayload()
   //  and log_data_retained may contain optional retained message from MqttPublishPayload()
@@ -2414,13 +2602,27 @@ void AddLogData(uint32_t loglevel, const char* log_data, const char* log_data_pa
   }
 }
 
-void AddLog(uint32_t loglevel, PGM_P formatP, ...) {
+uint32_t HighestLogLevel() {
   uint32_t highest_loglevel = TasmotaGlobal.seriallog_level;
   if (Settings->weblog_level > highest_loglevel) { highest_loglevel = Settings->weblog_level; }
   if (Settings->mqttlog_level > highest_loglevel) { highest_loglevel = Settings->mqttlog_level; }
   if (TasmotaGlobal.syslog_level > highest_loglevel) { highest_loglevel = TasmotaGlobal.syslog_level; }
   if (TasmotaGlobal.templog_level > highest_loglevel) { highest_loglevel = TasmotaGlobal.templog_level; }
   if (TasmotaGlobal.uptime < 3) { highest_loglevel = LOG_LEVEL_DEBUG_MORE; }  // Log all before setup correct log level
+  return highest_loglevel;
+}
+
+void AddLog(uint32_t loglevel, PGM_P formatP, ...) {
+#ifdef ESP32
+  if (xPortInIsrContext()) {
+    // When called from an ISR, you should not send out logs.
+    // Allocating memory from within an ISR is a big no-no.
+    // Also long-time blocking like sending logs (especially to a syslog server) 
+    // is also really not a good idea from an ISR call.
+    return;
+  }
+#endif
+  uint32_t highest_loglevel = HighestLogLevel();
 
   // If no logging is requested then do not access heap to fight fragmentation
   if ((loglevel <= highest_loglevel) && (TasmotaGlobal.masterlog_level <= highest_loglevel)) {
@@ -2449,21 +2651,34 @@ void AddLogMissed(const char *sensor, uint32_t misses)
   AddLog(LOG_LEVEL_DEBUG, PSTR("SNS: %s missed %d"), sensor, SENSOR_MAX_MISS - misses);
 }
 
-void AddLogSpi(bool hardware, uint32_t clk, uint32_t mosi, uint32_t miso) {
-  // Needs optimization
-  uint32_t enabled = (hardware) ? TasmotaGlobal.spi_enabled : TasmotaGlobal.soft_spi_enabled;
+void AddLogSpi(uint32_t hardware, int clk, int mosi, int miso) {
+  uint32_t enabled = TasmotaGlobal.soft_spi_enabled;
+  char hwswbus[8];
+  if (hardware) {
+#ifdef ESP8266
+    strcpy_P(hwswbus, PSTR("Hard"));
+    enabled = TasmotaGlobal.spi_enabled;
+#endif      
+#ifdef ESP32
+    strcpy_P(hwswbus, PSTR("Bus0"));
+    hwswbus[3] += (char)hardware;
+    enabled = (1 == hardware) ? TasmotaGlobal.spi_enabled : TasmotaGlobal.spi_enabled2;
+#endif
+  } else {
+    strcpy_P(hwswbus, PSTR("Soft"));
+  }
   switch(enabled) {
     case SPI_MOSI:
       AddLog(LOG_LEVEL_INFO, PSTR("SPI: %s using GPIO%02d(CLK) and GPIO%02d(MOSI)"),
-        (hardware) ? PSTR("Hardware") : PSTR("Software"), clk, mosi);
+        hwswbus, clk, mosi);
       break;
     case SPI_MISO:
       AddLog(LOG_LEVEL_INFO, PSTR("SPI: %s using GPIO%02d(CLK) and GPIO%02d(MISO)"),
-        (hardware) ? PSTR("Hardware") : PSTR("Software"), clk, miso);
+        hwswbus, clk, miso);
       break;
     case SPI_MOSI_MISO:
       AddLog(LOG_LEVEL_INFO, PSTR("SPI: %s using GPIO%02d(CLK), GPIO%02d(MOSI) and GPIO%02d(MISO)"),
-        (hardware) ? PSTR("Hardware") : PSTR("Software"), clk, mosi, miso);
+        hwswbus, clk, mosi, miso);
       break;
   }
 }
