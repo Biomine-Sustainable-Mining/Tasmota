@@ -4,13 +4,12 @@
 
 import mqtt
 import json
-import string
 
 # Import minimal modules - each <1KB
-import LwConfig as lw_config
-import LwFormatter as lw_formatter
-import LwDecoderManager as lw_decoderman
-import LwWebUI as lw_webui
+import 'config/LwConfig'
+import 'formatters/LwFormatter' 
+import 'decoders/LwDecoderManager'
+import 'webui/LwWebUI'
 
 # Global state - minimal footprint
 if !global.lw_main_state
@@ -71,51 +70,35 @@ end
 
 # Main decode function - streamlined
 def lw_decode(data)
-  log("LwD: lw_decode() fired",1)
   try
     var device_data = data['LwReceived']
-    var device_name = device_data.keys()()
+    var device_name = device_data.keys()[0]
     var device_info = device_data[device_name]
     
-    log("LwD: step #0",1)
-
     # Basic validation
     var decoder_name = device_info.find('Decoder')
-    if !decoder_name 
-      log("LwD: decoder not present",1)
-      return true
-    end
+    if !decoder_name return true end
     
-    log("LwD: step #1",1)
     var payload = device_info.find('Payload')
-    if !payload || payload.size() == 0
-      log("LwD: invalid payload",1)
-      return true 
-    end
+    if !payload || payload.size() == 0 return true end
     
     # Size limit check
-    log("LwD: step #2",1)
-    var max_size = lw_config.get_lw_config('max_payload_size', 512)
+    var max_size = get_lw_config('max_payload_size', 512)
     if payload.size() > max_size
-      log("LwD: invalid payload max size",1)
       return true
     end
     
-    log("LwD: step #3",1)
     # Hash-based duplicate detection
-    if lw_decoderman.should_check_hash(decoder_name)
-      var current_hash = lw_decoderman.calculate_payload_hash(payload)
+    if should_check_hash(decoder_name)
+      var current_hash = calculate_payload_hash(payload)
       if current_hash == global.lw_main_state[0]  # last_payload_hash
-        log("LwD: duplicate hash found",1)
         return true  # Skip duplicate
       end
       global.lw_main_state[0] = current_hash
     end
     
-    log("LwD: Deconding",1)
-
     # Decode payload
-    var decode_result = lw_decoderman.decode_lw_payload(
+    var decode_result = decode_lw_payload(
       decoder_name,
       device_info['Name'],
       device_info['Node'], 
@@ -143,7 +126,6 @@ def lw_decode(data)
     return true
     
   except .. as e, m
-    log("LwD: exception: " + e,1)
     global.lw_main_state[3] += 1  # error_count++
     return true
   end
@@ -152,7 +134,7 @@ end
 # Web sensor display - minimal implementation
 def web_sensor()
   var current_time = tasmota.millis()
-  var cache_timeout = lw_config.get_lw_config('cache_timeout_ms', 5000)
+  var cache_timeout = get_lw_config('cache_timeout_ms', 5000)
   
   # Simple cache check
   if current_time - global.lw_main_state[1] < cache_timeout && global.lw_webui_state[1] != ""
@@ -161,7 +143,7 @@ def web_sensor()
   end
   
   var content = ""
-  var decoders = lw_decoderman.get_loaded_lw_decoders()
+  var decoders = get_loaded_lw_decoders()
   
   # Get web sensor data from loaded decoders
   for decoder_name : decoders.keys()
@@ -185,7 +167,7 @@ def web_sensor()
     # Use new formatter for CSS if available
     var css = ""
     try
-      var fmt = lw_formatter.create_lw_formatter()
+      var fmt = create_lw_formatter()
       css = fmt.generate_css()
     except .. as e, m
       # Fallback to basic CSS
@@ -205,12 +187,12 @@ end
 # Command handlers - minimal overhead
 def cmd_legacy_reload(cmd, idx, payload)
   if payload == ""
-    var results = lw_decoderman.reload_all_lw_decoders()
+    var results = reload_all_lw_decoders()
     return tasmota.resp_cmnd(format('{"LwReload":"Success:%d Failed:%d"}', 
                                    results['success'].size(), 
                                    results['failed'].size()))
   else
-    var result = lw_decoderman.reload_lw_decoder(payload)
+    var result = reload_lw_decoder(payload)
     var status = result['success'] ? "OK" : "Failed"
     return tasmota.resp_cmnd(format('{"LwReload":"%s %s"}', payload, status))
   end
@@ -218,7 +200,7 @@ end
 
 def cmd_status(cmd, idx, payload)
   var stats = global.lw_main_state
-  var decoders = lw_decoderman.get_loaded_lw_decoders()
+  var decoders = get_loaded_lw_decoders()
   
   var status = {
     'version': '2.0-ESP32',
@@ -288,11 +270,11 @@ def get_lwdecode_instance()
 end
 
 def reload_decoder(decoder_name)
-  return lw_decoderman.reload_lw_decoder(decoder_name)
+  return reload_lw_decoder(decoder_name)
 end
 
 def get_decoder_stats(decoder_name)
-  return lw_decoderman.get_lw_decoder_stats(decoder_name)
+  return get_lw_decoder_stats(decoder_name)
 end
 
 print("LoRaWAN Decoder System v2.0-ESP32 ready!")
